@@ -39,10 +39,8 @@
 \graphicspath{{figures/}}
 % Single line spacing is the LaTeX default -- do NOT add \setstretch/\doublespacing.
 
-\title{\vspace{-1.5em}Multi-Agent Systems \& Agentic AI --- Practical Examination\\[4pt]
-       \large Part~I: GRPO finetuning of Gemma~3 on a TPU (Sections~I.1--I.4)\\
-       \large Part~II: Adaptive planning in \texttt{cmbagent\_lg}}
-\author{Sicheng Ma \\ \texttt{[CRSid / college]}}   % TODO: fill in CRSid and college
+\title{\vspace{-1.5em}Multi-Agent Systems \& Agentic AI --- Practical Examination\\[4pt]}
+\author{Sicheng Ma \\ \texttt{sm3035}}
 \date{\today}
 
 \begin{document}
@@ -55,10 +53,11 @@
 % NOTE: Part I.4 (theory) and Part II are STRICTLY INDIVIDUAL -- only the
 % practical sections I.1-I.3 describe shared team work.
 %------------------------------------------------------------------------------
-\noindent\textbf{Team members:} Sicheng Ma (author), \textit{[teammate name(s)]}.\\
-\textbf{Jointly-owned experiments (I.1--I.3 only):} \textit{[state which runs / plots are shared with teammates; everything else, and all of I.4 and Part~II, is your own individual work]}.\\
+\noindent\textbf{Team:} chmawa. \\
+\noindent\textbf{Members:} Sicheng Ma, Baiyuan Chen, Zixuan Wang.\\
+\textbf{Jointly-owned experiments (I.1--I.3):} \textit{[state which runs / plots are shared with teammates; everything else, and all of I.4 and Part~II, is your own individual work]}.\\
 \textbf{Code (GitLab):} \url{https://gitlab.com/USER/REPO}\quad % TODO: replace with your GitLab repo
-\textbf{W\&B:} \url{https://wandb.ai/ENTITY/PROJECT}\\           % TODO: replace with your W&B run/project
+\textbf{W\&B:} \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo}{\texttt{a8-grpo}} (baseline run \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/bdbugenj}{\texttt{bdbugenj}})\\
 \textbf{Baseline:} tpu-2026 @ \href{https://github.com/borisbolliet/tpu-2026/tree/324abbe4b4e229ea812223856393547db4fbb53e}{\texttt{324abbe}}.\quad
 \textbf{Part~II study target:} \texttt{cmbagent\_lg} @ \href{https://github.com/borisbolliet/cmbagent_lg/tree/adaptive-planning}{\texttt{adaptive-planning}}. % TODO: pin the exact commit you studied
 
@@ -78,46 +77,110 @@
 \section{Reproducing the baseline}
 \label{sec:reproduce}
 
-% TODO (i): exact commit you ran, wall-clock time, and number of GRPO steps
-% actually completed (default target MAX_STEPS = 3364).
 \paragraph{Run provenance.}
-\textit{TODO: exact commit (baseline \texttt{324abbe} plus any of your own commits on top), wall-clock time of the run, and GRPO steps actually completed (default \texttt{MAX\_STEPS}$=3364$).}
+We ran \texttt{scripts/train.py} unmodified at baseline commit
+\href{https://github.com/borisbolliet/tpu-2026/tree/324abbe4b4e229ea812223856393547db4fbb53e}{\texttt{324abbe}}
+with the default \texttt{config.py}, on a single Cloud TPU \texttt{v6e-1} (1 chip,
+$32$\,GiB HBM). The run completed all \texttt{MAX\_STEPS}$=3364$ GRPO steps
+($=\lfloor 0.9\times\texttt{NUM\_BATCHES}\rfloor$, the $90\%$ train split of
+$3738$ micro-batches; with group size $K=2$ that is $6728$ rollouts) in a
+wall-clock time of $\approx\!4.7$\,h ($16{,}999$\,s end-to-end; $\approx\!4.6$\,h
+inside the training loop), logged to W\&B run
+\href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/bdbugenj}{\texttt{bdbugenj}}.
+Salient defaults: $\beta=0.08$, $\varepsilon=0.2$, LoRA rank${=}\alpha{=}64$,
+learning rate $3\times10^{-6}$ (cosine, $10\%$ warmup), grad-norm clip $0.1$,
+micro-batch $1$, rollout temperature $0.9$, up to $768$ generated tokens.
 
 % TODO (ii): GSM8K accuracy of (a) the BASE model gemma-3-1b-it and (b) the
 % LoRA-finetuned checkpoint, on a clearly-stated held-out split with a fixed
 % seed. evaluate.py --preset greedy gives a deterministic number.
 \paragraph{Held-out accuracy (base vs.\ LoRA).}
-Held-out split: \textit{TODO (e.g.\ GSM8K test, $N$ prompts, fixed seed, \texttt{evaluate.py --preset greedy})}.
+Held-out split: the GSM8K \emph{test} split, deterministically shuffled
+(\texttt{seed}{=}42) and truncated to the first $N{=}64$ problems
+(\texttt{NUM\_TEST\_BATCHES}), scored greedily
+(\texttt{evaluate.py --preset greedy}: \texttt{temperature}{=}\texttt{None},
+\texttt{top\_k}{=}1), so every number is deterministic. ``Exact'' compares the
+parsed \texttt{<answer>} to the gold number, ``$\pm10\%$'' uses the numeric ratio,
+and ``Format'' is the fraction of completions matching the
+\texttt{<reasoning>}\dots\texttt{</reasoning><answer>}\dots\texttt{</answer>}
+template. Because only post-peak checkpoints survived
+(\texttt{SAVE\_INTERVAL\_STEPS}{=}500, \texttt{MAX\_TO\_KEEP}{=}4), we report the
+final checkpoint (step $3364$, ``the resulting checkpoint'') alongside steps
+$3000$ and $2000$ to show the trend.
 \begin{table}[h]
   \centering
-  \caption{GSM8K accuracy: base \texttt{gemma-3-1b-it} vs.\ the baseline LoRA checkpoint (held-out split, greedy decoding, fixed seed). \emph{TODO: fill in.}}
+  \caption{GSM8K accuracy: base \texttt{gemma-3-1b-it} vs.\ the baseline LoRA
+  checkpoints (GSM8K test, first $N{=}64$ problems, shuffle \texttt{seed}{=}42,
+  greedy). Exact-match counts of $64$: base $33$, step~$2000$ $18$, step~$3000$
+  $4$, step~$3364$ $2$.}
   \label{tab:baseline-acc}
   \begin{tabular}{lccc}
     \toprule
     Model & Exact-match (\%) & Within $\pm10\%$ (\%) & Format acc.\ (\%) \\
     \midrule
-    Base \texttt{gemma-3-1b-it}            & TODO & TODO & TODO \\
-    Baseline LoRA (step \textit{TODO})     & TODO & TODO & TODO \\
+    Base \texttt{gemma-3-1b-it}              & \textbf{51.56} & \textbf{53.12} & 6.25 \\
+    Baseline LoRA, step $2000$               & 28.12 & 29.69 & \textbf{35.94} \\
+    Baseline LoRA, step $3000$               & 6.25  & 7.81  & 12.50 \\
+    Baseline LoRA, step $3364$ (final)       & 3.12  & 6.25  & 12.50 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-% TODO (iii): baseline training curve (mean reward r-bar vs GRPO step) and the
-% KL divergence KL(pi_theta || pi_ref) over training.
+\noindent The baseline does \emph{not} reproduce as an improvement. The base
+model already solves $51.6\%$ of the problems --- it obeys the \texttt{<answer>}
+instruction well enough to be parsed, but rarely emits the full strict template,
+hence its low \emph{format} score --- whereas every saved checkpoint is worse and
+degrades monotonically, the ``resulting'' step-$3364$ checkpoint collapsing to
+$3.1\%$. Tellingly, step $2000$ has the \emph{highest} format accuracy ($35.9\%$)
+yet still lower correctness than base: the format-shaping reward is being
+optimised at the expense of the arithmetic (reward hacking) before the run
+destabilises entirely (Fig.~\ref{fig:baseline-curves}).
+
 \paragraph{Training curves.}
+The reward (Fig.~\ref{fig:baseline-curves}, left; $\bar r$ summed over the four
+reward functions, max $10$) rises fast --- the policy acquires the output
+template within $\sim$150 steps and peaks at $\bar r\approx 6$--$7$ near step
+$450$ --- but then \emph{declines steadily} for the rest of training, reaching
+$\bar r\approx 0$ (often negative) by step $\sim$2700 with no recovery. The
+held-out (val) reward, logged every $64$ steps, tracks training closely, so this
+is genuine policy degradation, not over-fitting. KL stays small ($\lesssim 0.7$)
+for most of the run but shows sharp spikes (up to $\approx 41$, inset) in the
+final third --- the signature of unstable updates. Every surviving checkpoint
+therefore lies in this post-peak regime, which the accuracies in
+Table~\ref{tab:baseline-acc} reflect; this instability is what the I.3
+modification targets.
 \begin{figure}[h]
   \centering
-  % \includegraphics[width=0.48\textwidth]{baseline_reward.pdf}\hfill
-  % \includegraphics[width=0.48\textwidth]{baseline_kl.pdf}
-  \caption{Baseline mean reward $\bar r$ (left) and $\mathrm{KL}(\pi_\theta\,\|\,\pi_{\mathrm{ref}})$ (right) vs.\ GRPO step. \emph{TODO: export from W\&B / TensorBoard into \texttt{figures/}.}}
+  \includegraphics[width=0.49\textwidth]{baseline_reward.pdf}\hfill
+  \includegraphics[width=0.49\textwidth]{baseline_kl.pdf}
+  \caption{Baseline run \texttt{bdbugenj}: mean rollout reward $\bar r$ (left; max
+  $10$) and $\mathrm{KL}(\pi_\theta\,\|\,\pi_{\mathrm{ref}})$ (right, with a
+  full-range inset for the late spikes) vs.\ GRPO step. Faint = per-step; bold =
+  $100$-step running mean. Reward peaks near step $450$ then collapses.}
   \label{fig:baseline-curves}
 \end{figure}
 
-% TODO: if anything did not run as-shipped on your hardware, document the fix
-% here. Known environment-specific spots: run_tmux.sh hardcodes REPO/VENV paths;
-% config.py W&B entity/project point at another account.
 \paragraph{Baseline patches.}
-\textit{TODO: document any change required to run the baseline as-shipped (e.g.\ the hardcoded \texttt{REPO}/\texttt{VENV} paths in \texttt{run\_tmux.sh}, or the \texttt{WANDB\_ENTITY}/\texttt{WANDB\_PROJECT} in \texttt{config.py}), or state ``none required''.}
+Training ran as-shipped (\texttt{run\_tmux.sh} already pointed at our home/venv);
+the GRPO algorithm and \texttt{config.py} were \emph{unchanged}. Three minor
+fixes, all outside the training loop: \textbf{(1) W\&B routing} ---
+\texttt{config.py} defaults to another account, so we set
+\texttt{WANDB\_ENTITY}/\texttt{WANDB\_PROJECT} via environment (run logged under
+\texttt{sichengma0514-university-of-cambridge/a8-grpo}); \textbf{(2) evaluation
+restore} --- as shipped, \texttt{evaluate.py} wraps the base model in a fresh
+LoRA adapter but never loads a checkpoint, and a zero-initialised adapter is a
+no-op ($\Delta W{=}\tfrac{\alpha}{r}BA$ with $B{=}0$), so it only ever scored the
+\emph{base} model; we added \texttt{-{}-ckpt-dir/-{}-steps/-{}-include-base} flags
+that restore the adapter through Tunix's \texttt{CheckpointManager} (mirroring the
+existing \texttt{chat.py}), leaving the default invocation unchanged;
+\textbf{(3) dataset re-read} --- re-opening the cached TFDS dataset in a fresh
+process throws \texttt{AttributeError: 'FieldDescriptor' object has no attribute
+'label'} under the installed \texttt{protobuf}~7.34 (the attribute was removed in
+\texttt{protobuf}~$\ge$5), so before evaluating we delete the stale prepared
+\texttt{data/\{train,test\}/gsm8k/1.0.0} and let \texttt{evaluate.py} re-prepare
+from the cached raw download in-process --- the same code path training used ---
+needing \emph{no code change}. (We also copied the volatile
+\texttt{/tmp/content/ckpts} to \texttt{\textasciitilde/tpu-2026/ckpts\_backup}.)
 
 % ----------------------------------------------------------------------------
 %  I.2  Understanding the baseline (10 marks) -- at most ONE page, in your own

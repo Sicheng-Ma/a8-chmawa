@@ -1,0 +1,44 @@
+{
+  "preset": "greedy",
+  "source": "tfds",
+  "num_prompts": 64,
+  "ckpt_dir": "/home/ext_sichengma0514_gmail_com/tpu-2026/ckpts_backup/actor",
+  "results": [
+    {
+      "model": "base",
+      "step": null,
+      "n": 33,
+      "total": 64,
+      "acc": 51.5625,
+      "partial": 53.125,
+      "format": 6.25
+    },
+    {
+      "model": "lora",
+      "step": 3364,
+      "n": 2,
+      "total": 64,
+      "acc": 3.125,
+      "partial": 6.25,
+      "format": 12.5
+    },
+    {
+      "model": "lora",
+      "step": 3000,
+      "n": 4,
+      "total": 64,
+      "acc": 6.25,
+      "partial": 7.8125,
+      "format": 12.5
+    },
+    {
+      "model": "lora",
+      "step": 2000,
+      "n": 18,
+      "total": 64,
+      "acc": 28.125,
+      "partial": 29.6875,
+      "format": 35.9375
+    }
+  ]
+}
