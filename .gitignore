@@ -1,0 +1,46 @@
+# secrets — never commit
+.env
+.env.*
+*.pem
+*.key
+kaggle.json
+service-account*.json
+
+# venv / build
+venvs/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# notebooks
+.ipynb_checkpoints/
+
+# datasets (downloaded by the notebook from kaggle/tfds at runtime)
+data/
+
+# run artifacts (checkpoints, wandb local cache, log files)
+ckpts_backup/
+wandb/
+scripts/wandb/
+scripts/*.log
+
+# editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# student roster / personal data — NEVER commit (privacy)
+*Form Responses*.csv
+members_template.csv
+members_upload.csv
+add_*.csv
+teams_roster.csv
+group_member_gmails.txt
+pending_gmails.txt
+Upload_*.log
+texput.log
