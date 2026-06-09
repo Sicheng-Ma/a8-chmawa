@@ -1,0 +1,6 @@
+# latexmk configuration for the report.
+# Build with:   cd report && latexmk -pdf main.tex
+# Clean with:   latexmk -C
+$pdf_mode   = 1;        # use pdflatex
+$out_dir    = 'build';  # keep build artifacts out of the source tree
+$bibtex_use = 2;        # run bibtex when the .bib / \cite set changes

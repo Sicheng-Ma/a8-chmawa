@@ -44,3 +44,16 @@ group_member_gmails.txt
 pending_gmails.txt
 Upload_*.log
 texput.log
+
+# latex build artifacts
+report/*.aux
+report/*.bbl
+report/*.blg
+report/*.fdb_latexmk
+report/*.fls
+report/*.log
+report/*.out
+report/*.synctex.gz
+report/*.toc
+report/*.lof
+report/*.lot

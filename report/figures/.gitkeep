@@ -1,0 +1,3 @@
+# Place report figures here (e.g. baseline_reward.pdf, baseline_kl.pdf,
+# improve_reward.pdf, improve_kl.pdf, diagnostic.pdf), exported from W&B or
+# TensorBoard. main.tex sets \graphicspath{{figures/}}.
