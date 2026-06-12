@@ -55,7 +55,9 @@
 %------------------------------------------------------------------------------
 \noindent\textbf{Team:} chmawa. \\
 \noindent\textbf{Members:} Sicheng Ma, Baiyuan Chen, Zixuan Wang.\\
-\textbf{Jointly-owned experiments (I.1--I.3):} \textit{[state which runs / plots are shared with teammates; everything else, and all of I.4 and Part~II, is your own individual work]}.\\
+\textbf{Jointly-owned experiments (I.1--I.3):} 
+% \textit{[state which runs / plots are shared with teammates; everything else, and all of I.4 and Part~II, is your own individual work]}.
+\\
 \textbf{Code (GitLab):} \url{https://gitlab.com/USER/REPO}\quad % TODO: replace with your GitLab repo
 \textbf{W\&B:} \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo}{\texttt{a8-grpo}} (baseline run \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/bdbugenj}{\texttt{bdbugenj}})\\
 \textbf{Baseline:} tpu-2026 @ \href{https://github.com/borisbolliet/tpu-2026/tree/324abbe4b4e229ea812223856393547db4fbb53e}{\texttt{324abbe}}.\quad
@@ -161,7 +163,8 @@ modification targets.
 \end{figure}
 
 \paragraph{Baseline patches.}
-Training ran as-shipped (\texttt{run\_tmux.sh} already pointed at our home/venv);
+Training ran as-shipped: at launch the tree matched \texttt{324abbe} except a
+two-line home-directory path edit in the \texttt{run\_tmux.sh} launcher;
 the GRPO algorithm and \texttt{config.py} were \emph{unchanged}. Three minor
 fixes, all outside the training loop: \textbf{(1) W\&B routing} ---
 \texttt{config.py} defaults to another account, so we set
@@ -192,24 +195,71 @@ needing \emph{no code change}. (We also copied the volatile
 % TODO (a): what plays the role of pi_theta, pi_old, pi_ref in the LoRA setup,
 % and which of them carries trainable parameters?
 \paragraph{(a) $\pi_\theta$, $\pi_{\mathrm{old}}$, $\pi_{\mathrm{ref}}$ in the LoRA setup.}
-\textit{TODO (in your own words): identify each policy in the code --- frozen base $W_0$ plus low-rank adapters; see \texttt{scripts/model.py} and \texttt{config.py} (\texttt{RANK}, \texttt{ALPHA}) --- and state which one carries trainable parameters.}
+In the LoRA setup, the $\pi_\theta$ corresponds to the current policy with the LoRA adapter applied, this is the one with trainable parameters; 
+$\pi_{\mathrm{old}}$ is the behaviour policy from which rollouts are sampled, which in Tunix's GRPO implementation is a periodically updated copy of $\pi_\theta$ (the policy before the current update);
+and $\pi_{\mathrm{ref}}$ is the fixed base model \texttt{gemma-3-1b-it} without any LoRA adapter.
 
 % TODO (b): group size K in config.py, and which advantage estimator Tunix
 % uses -- standard group baseline or leave-one-out?
 \paragraph{(b) Group size $K$ and the advantage estimator.}
-\textit{TODO: $K=2$ (\texttt{NUM\_GENERATIONS} in \texttt{config.py}); state whether Tunix's $\hat A_i$ uses the standard group mean/std baseline or the leave-one-out variant (check the Tunix GRPO implementation).}
+The group size is $K=2$: \texttt{NUM\_GENERATIONS} in \texttt{config.py}, passed as
+\texttt{GRPOConfig(num\_generations$=$2)} in \texttt{train.py}, so each prompt is rolled out
+twice and the pair forms one group. Tunix resolves the estimator by name from a
+registry: \texttt{GRPOConfig.advantage\_estimator} defaults to \texttt{"grpo"} and
+\texttt{train.py} does not override it, which selects \texttt{compute\_advantages} in
+\texttt{tunix/rl/algo\_core.py} --- the \emph{standard} group baseline
+$\hat A_i=(r_i-\bar r)/(\sigma_r+10^{-6})$ with the group's sample std
+(\texttt{ddof}$=$1), \emph{not} leave-one-out (RLOO ships in the same file under the
+separate registry name \texttt{"rloo"}). A consequence of $K{=}2$: $r_i-\bar r=
+\pm\tfrac12(r_1-r_2)$ and $\sigma_r=|r_1-r_2|/\sqrt2$, so whenever the two rewards differ
+at all, $\hat A_i=\pm1/\sqrt2$ \emph{regardless of the margin}, and $\hat A_i\approx0$ on
+ties --- the advantage carries only the sign of the within-pair comparison.
 
 % TODO (c): in rewards.py, which terms are shaping rewards and which is the
 % "true" correctness reward? In terms of within-group reward variance sigma_r,
 % what happens early in training with the correctness reward alone?
 \paragraph{(c) Shaping vs.\ correctness rewards and $\sigma_r$.}
-\textit{TODO: classify the four functions in \texttt{scripts/rewards.py} (exact / approximate format matching, \texttt{check\_answer}, \texttt{check\_numbers}); explain why correctness alone makes $\sigma_r\!\to\!0$ early (all-zero groups give degenerate $\hat A_i=(r_i-\bar r)/\sigma_r$) and how shaping rewards restore signal.}
+\texttt{match\_format\_exactly} ($+3$ for a full template match) and
+\texttt{match\_format\_approximately} ($\pm0.5$ per tag, range $[-2.5,2.5]$) are pure
+\emph{shaping} rewards: they score the output format, never the mathematics. The ``true''
+correctness reward is \texttt{check\_answer}: it extracts the \texttt{<answer>} field via the
+full-template regex and grades the number ($+3$ exact, $+1.5$ after stripping, $+0.5/{+}0.25$
+within $10/20\%$, $-1$ wrong, $-0.5$ unparseable). \texttt{check\_numbers} ($+1.5$ iff
+\emph{any} number after \texttt{<answer>} equals the gold answer) is a binary correctness
+\emph{fallback} that also shapes towards emitting an extractable number at all. With the
+correctness reward alone, early in training the per-rollout success probability $p$ is tiny
+(doubly so for \texttt{check\_answer}, which is gated on the template parsing), so both
+rollouts of a group almost surely receive the \emph{same} reward: a group is informative only
+when the two disagree, with probability $2p(1-p)\approx2p\to0$ (for a binary reward of size
+$c$, $\mathbb{E}[\sigma_r^2]=c^2p(1-p)$). Every degenerate group has $r_i=\bar r$, hence
+$\hat A_i=0$ and a zero policy-gradient term. The graded format
+terms already differ between two \emph{wrong} answers, keeping $\sigma_r>0$ (and, by (b),
+$|\hat A_i|=1/\sqrt2$) from the first steps; this is what lets training start, and equally
+what the run later exploits when format is optimised at the expense of correctness
+(Sec.~\ref{sec:reproduce}).
 
 % TODO (d): where is the clipped (PPO-style) surrogate implemented in Tunix,
 % and what does the clip range epsilon correspond to in config.py? Note any
 % deviation from the lecture form (e.g. per-token vs per-sequence ratio).
 \paragraph{(d) The clipped surrogate and $\varepsilon$.}
-\textit{TODO: locate the clipped-surrogate site in Tunix; $\varepsilon=0.2$ (\texttt{EPSILON}); note whether the ratio $\rho$ is applied per-token or per-sequence relative to the lecture form.}
+The clip is implemented in \texttt{grpo\_loss\_fn} in \texttt{tunix/rl/algo\_core.py}
+(registered as policy loss \texttt{"grpo"}): per-token log-ratios are exponentiated to
+$\rho_t$ and the per-token loss is
+$\max\bigl(-\hat A\,\rho_t,\,-\hat A\,\mathrm{clip}(\rho_t,1-\varepsilon,1+\varepsilon)\bigr)$,
+the lecture objective with $\varepsilon=\texttt{EPSILON}=0.2$ from \texttt{config.py} (via
+\texttt{GRPOConfig(epsilon$=$0.2)}; the upper bound $\varepsilon_{\mathrm{high}}$ defaults to
+$\varepsilon$, so the clip is symmetric). Two deviations from the lecture form. \emph{(1)
+Per-token ratio:} $\rho_t$ is computed per token while $\hat A_i$ is per-sequence, broadcast
+to every completion token, so clipping acts token-wise. \emph{(2) The clip is inert here:}
+with $\mu=\texttt{NUM\_ITERATIONS}=1$ Tunix never computes separate $\pi_{\mathrm{old}}$
+log-probs (\texttt{grpo\_learner.py} does so only for $\mu>1$) and substitutes
+\texttt{stop\_gradient} of the current log-probs, so $\rho_t\equiv1$ in the forward pass, the
+clip never binds (\texttt{pg\_clipfrac}$=0$), and the surrogate reduces to group-relative
+REINFORCE, $-\hat A_i\nabla_\theta\log\pi_\theta$. The KL anchor is a separate additive
+penalty $\beta\,\widehat{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}})$ with $\beta=0.08$,
+estimated per token by the naive $\log\pi_\theta-\log\pi_{\mathrm{ref}}$ (mode
+\texttt{"kl"}: unbiased but sign-indefinite --- and indeed ${\sim}1.5\%$ of the logged
+steps dip marginally below zero).
 
 % ----------------------------------------------------------------------------
 %  I.3  Improving on the baseline (30 marks)
