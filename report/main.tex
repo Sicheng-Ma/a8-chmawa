@@ -31,6 +31,13 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{caption}
+\captionsetup{font=small,skip=4pt}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\usepackage{titlesec}   % tighten heading whitespace only (body stays 11pt single-spaced)
+\titlespacing*{\section}{0pt}{2.2ex plus .6ex minus .3ex}{1.2ex plus .3ex}
+\titlespacing*{\subsection}{0pt}{1.8ex plus .5ex minus .3ex}{1ex plus .2ex}
+\titlespacing*{\paragraph}{0pt}{1.8ex plus .5ex minus .3ex}{1em}
 \usepackage[numbers,sort&compress]{natbib}
 \usepackage{xcolor}
 \usepackage[colorlinks=true,allcolors=blue]{hyperref}
@@ -39,31 +46,63 @@
 \graphicspath{{figures/}}
 % Single line spacing is the LaTeX default -- do NOT add \setstretch/\doublespacing.
 
-\title{\vspace{-1.5em}Multi-Agent Systems \& Agentic AI --- Practical Examination\\[4pt]}
-\author{Sicheng Ma \\ \texttt{sm3035}}
-\date{\today}
-
 \begin{document}
-\maketitle
-\vspace{-1.5em}
+% ---------------------------------------------------------------------------
+% Dedicated title page: title, author, team, ownership statement, and links.
+% Page limits count sections I.1-I.3 / I.4 / Part II only (excl. front matter,
+% references, appendix), so the practical write-up starts on its own page.
+% ---------------------------------------------------------------------------
+\thispagestyle{empty}
+\vspace*{3.2cm}
+\begin{center}
+  {\LARGE\bfseries Multi-Agent Systems \& Agentic AI}\\[8pt]
+  {\Large Practical Examination}\\[30pt]
+  {\large Sicheng Ma}\\[4pt]
+  \texttt{sm3035}\\[4pt]
+  \today
+\end{center}
 
+\vspace{2.4cm}
 %------------------------------------------------------------------------------
 % REQUIRED title-page metadata: team members, ownership statement, and links.
 % The marker uses the ownership statement to attribute jointly-owned experiments.
-% NOTE: Part I.4 (theory) and Part II are STRICTLY INDIVIDUAL -- only the
-% practical sections I.1-I.3 describe shared team work.
 %------------------------------------------------------------------------------
-\noindent\textbf{Team:} chmawa. \\
-\noindent\textbf{Members:} Sicheng Ma, Baiyuan Chen, Zixuan Wang.\\
-\textbf{Jointly-owned experiments (I.1--I.3):} 
-% \textit{[state which runs / plots are shared with teammates; everything else, and all of I.4 and Part~II, is your own individual work]}.
-\\
-\textbf{Code (GitLab):} \url{https://gitlab.com/USER/REPO}\quad % TODO: replace with your GitLab repo
-\textbf{W\&B:} \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo}{\texttt{a8-grpo}} (baseline run \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/bdbugenj}{\texttt{bdbugenj}})\\
-\textbf{Baseline:} tpu-2026 @ \href{https://github.com/borisbolliet/tpu-2026/tree/324abbe4b4e229ea812223856393547db4fbb53e}{\texttt{324abbe}}.\quad
-\textbf{Part~II study target:} \texttt{cmbagent\_lg} @ \href{https://github.com/borisbolliet/cmbagent_lg/tree/adaptive-planning}{\texttt{adaptive-planning}}. % TODO: pin the exact commit you studied
+\begin{center}
+\renewcommand{\arraystretch}{1.55}
+\begin{tabular}{@{}r@{\qquad}p{0.64\textwidth}@{}}
+  \textbf{Team} &
+    \texttt{chmawa} --- Sicheng Ma (\texttt{sm3035}), Baiyuan Chen, Zixuan Wang \\
+  \textbf{Code (GitLab)} &
+    \url{https://gitlab.com/USER/REPO} % TODO: replace with the team GitLab repo
+    \newline {\small (all training and evaluation logs are included in the repository)} \\
+  \textbf{W\&B project} &
+    \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo}{\texttt{a8-grpo}}
+    --- baseline run \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/bdbugenj}{\texttt{bdbugenj}};
+    variants R0, R1, R2, R4 (linked in Sec.~\ref{sec:improve}) \\
+  \textbf{Baseline code} &
+    \texttt{tpu-2026} @ commit
+    \href{https://github.com/borisbolliet/tpu-2026/tree/324abbe4b4e229ea812223856393547db4fbb53e}{\texttt{324abbe}},
+    run on a Cloud TPU \texttt{v6e-1} \\
+  \textbf{Part II target} &
+    \texttt{cmbagent\_lg} @
+    \href{https://github.com/borisbolliet/cmbagent_lg/tree/adaptive-planning}{\texttt{adaptive-planning}} % TODO: pin the exact commit studied
+\end{tabular}
+\end{center}
 
-\vspace{0.5em}\hrule\vspace{0.6em}
+\vspace{1.6cm}
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+  \small
+  \textbf{Jointly-owned experiments (I.1--I.3).} The GRPO training runs (baseline
+  \texttt{bdbugenj}; R0, R1, R2, R4 per the team plan) and their checkpoint
+  evaluations are team-owned; the analysis, figures, and all prose in this report
+  are my own. Section~I.4 (theory) and Part~II are strictly individual work.
+  % TODO: adjust wording if needed
+\end{minipage}
+\end{center}
+
+\clearpage
+\setcounter{page}{1}  % I.1-I.3 print as pages 1-3 (title page excluded from limits)
 
 % ============================================================================
 %  PART I -- GRPO FINETUNING OF GEMMA 3 ON A TPU
@@ -83,15 +122,13 @@
 We ran \texttt{scripts/train.py} unmodified at baseline commit
 \href{https://github.com/borisbolliet/tpu-2026/tree/324abbe4b4e229ea812223856393547db4fbb53e}{\texttt{324abbe}}
 with the default \texttt{config.py}, on a single Cloud TPU \texttt{v6e-1} (1 chip,
-$32$\,GiB HBM). The run completed all \texttt{MAX\_STEPS}$=3364$ GRPO steps
-($=\lfloor 0.9\times\texttt{NUM\_BATCHES}\rfloor$, the $90\%$ train split of
-$3738$ micro-batches; with group size $K=2$ that is $6728$ rollouts) in a
-wall-clock time of $\approx\!4.7$\,h ($16{,}999$\,s end-to-end; $\approx\!4.6$\,h
-inside the training loop), logged to W\&B run
+$32$\,GiB HBM). The run completed all \texttt{MAX\_STEPS}$=3364$ GRPO steps (the
+$90\%$ train split of $3738$ prompts; $6728$ rollouts at $K{=}2$) in
+$\approx\!4.7$\,h wall-clock ($16{,}999$\,s), logged to W\&B run
 \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/bdbugenj}{\texttt{bdbugenj}}.
-Salient defaults: $\beta=0.08$, $\varepsilon=0.2$, LoRA rank${=}\alpha{=}64$,
-learning rate $3\times10^{-6}$ (cosine, $10\%$ warmup), grad-norm clip $0.1$,
-micro-batch $1$, rollout temperature $0.9$, up to $768$ generated tokens.
+Defaults: $\beta{=}0.08$, $\varepsilon{=}0.2$, rank${=}\alpha{=}64$, LR
+$3{\times}10^{-6}$ (cosine, $10\%$ warmup), grad clip $0.1$, $K{=}2$, rollout
+$T{=}0.9$, $\le768$ tokens.
 
 % TODO (ii): GSM8K accuracy of (a) the BASE model gemma-3-1b-it and (b) the
 % LoRA-finetuned checkpoint, on a clearly-stated held-out split with a fixed
@@ -99,91 +136,76 @@ micro-batch $1$, rollout temperature $0.9$, up to $768$ generated tokens.
 \paragraph{Held-out accuracy (base vs.\ LoRA).}
 Held-out split: the GSM8K \emph{test} split, deterministically shuffled
 (\texttt{seed}{=}42) and truncated to the first $N{=}64$ problems
-(\texttt{NUM\_TEST\_BATCHES}), scored greedily
-(\texttt{evaluate.py --preset greedy}: \texttt{temperature}{=}\texttt{None},
-\texttt{top\_k}{=}1), so every number is deterministic. ``Exact'' compares the
-parsed \texttt{<answer>} to the gold number, ``$\pm10\%$'' uses the numeric ratio,
-and ``Format'' is the fraction of completions matching the
-\texttt{<reasoning>}\dots\texttt{</reasoning><answer>}\dots\texttt{</answer>}
-template. Because only post-peak checkpoints survived
-(\texttt{SAVE\_INTERVAL\_STEPS}{=}500, \texttt{MAX\_TO\_KEEP}{=}4), we report the
-final checkpoint (step $3364$, ``the resulting checkpoint'') alongside steps
-$3000$ and $2000$ to show the trend.
+(\texttt{NUM\_TEST\_BATCHES}), scored greedily (\texttt{temperature}{=}\texttt{None},
+\texttt{top\_k}{=}1), so every number is deterministic. Metrics: exact numeric
+match of the parsed \texttt{<answer>}; within $\pm10\%$ by ratio; full-template
+format match. Only post-peak checkpoints survived (\texttt{SAVE\_INTERVAL}{=}500,
+\texttt{MAX\_TO\_KEEP}{=}4); we report the final checkpoint (``the resulting
+checkpoint'') alongside step~$2000$ for the trend.
 \begin{table}[h]
   \centering
   \caption{GSM8K accuracy: base \texttt{gemma-3-1b-it} vs.\ the baseline LoRA
-  checkpoints (GSM8K test, first $N{=}64$ problems, shuffle \texttt{seed}{=}42,
-  greedy). Exact-match counts of $64$: base $33$, step~$2000$ $18$, step~$3000$
-  $4$, step~$3364$ $2$.}
+  checkpoints (GSM8K test, first $N{=}64$, shuffle \texttt{seed}{=}42, greedy).
+  Exact-match counts of $64$: $33/18/2$.}
   \label{tab:baseline-acc}
+  \small
   \begin{tabular}{lccc}
     \toprule
     Model & Exact-match (\%) & Within $\pm10\%$ (\%) & Format acc.\ (\%) \\
     \midrule
     Base \texttt{gemma-3-1b-it}              & \textbf{51.56} & \textbf{53.12} & 6.25 \\
     Baseline LoRA, step $2000$               & 28.12 & 29.69 & \textbf{35.94} \\
-    Baseline LoRA, step $3000$               & 6.25  & 7.81  & 12.50 \\
     Baseline LoRA, step $3364$ (final)       & 3.12  & 6.25  & 12.50 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \noindent The baseline does \emph{not} reproduce as an improvement. The base
-model already solves $51.6\%$ of the problems --- it obeys the \texttt{<answer>}
-instruction well enough to be parsed, but rarely emits the full strict template,
-hence its low \emph{format} score --- whereas every saved checkpoint is worse and
-degrades monotonically, the ``resulting'' step-$3364$ checkpoint collapsing to
-$3.1\%$. Tellingly, step $2000$ has the \emph{highest} format accuracy ($35.9\%$)
-yet still lower correctness than base: the format-shaping reward is being
-optimised at the expense of the arithmetic (reward hacking) before the run
-destabilises entirely (Fig.~\ref{fig:baseline-curves}).
+model already solves $51.6\%$ (its answers parse, rarely in the strict template),
+whereas every saved checkpoint is worse, the ``resulting'' step-$3364$ one
+collapsing to $3.1\%$. Tellingly, step $2000$ has the \emph{highest} format
+accuracy yet lower correctness than base: format shaping is optimised at the
+expense of the arithmetic (reward hacking) before the run destabilises entirely
+(Fig.~\ref{fig:baseline-curves}).
 
 \paragraph{Training curves.}
 The reward (Fig.~\ref{fig:baseline-curves}, left; $\bar r$ summed over the four
-reward functions, max $10$) rises fast --- the policy acquires the output
-template within $\sim$150 steps and peaks at $\bar r\approx 6$--$7$ near step
-$450$ --- but then \emph{declines steadily} for the rest of training, reaching
+reward functions, max $10$) rises fast --- the template is acquired within
+$\sim$150 steps, peaking at $\bar r\approx 6$--$7$ near step $450$ --- then
+\emph{declines steadily} for the rest of training, reaching
 $\bar r\approx 0$ (often negative) by step $\sim$2700 with no recovery. The
-held-out (val) reward, logged every $64$ steps, tracks training closely, so this
-is genuine policy degradation, not over-fitting. KL stays small ($\lesssim 0.7$)
-for most of the run but shows sharp spikes (up to $\approx 41$, inset) in the
-final third --- the signature of unstable updates. Every surviving checkpoint
-therefore lies in this post-peak regime, which the accuracies in
-Table~\ref{tab:baseline-acc} reflect; this instability is what the I.3
-modification targets.
+held-out (val) reward, logged every $64$ steps, tracks training closely: genuine
+policy degradation, not over-fitting. KL stays small ($\lesssim 0.7$) for most of
+the run but spikes (up to $\approx 41$, inset) in the final third --- unstable
+updates; every surviving checkpoint lies in this post-peak regime
+(Table~\ref{tab:baseline-acc}), which Sec.~\ref{sec:improve} targets.
 \begin{figure}[h]
   \centering
-  \includegraphics[width=0.49\textwidth]{baseline_reward.pdf}\hfill
-  \includegraphics[width=0.49\textwidth]{baseline_kl.pdf}
-  \caption{Baseline run \texttt{bdbugenj}: mean rollout reward $\bar r$ (left; max
-  $10$) and $\mathrm{KL}(\pi_\theta\,\|\,\pi_{\mathrm{ref}})$ (right, with a
-  full-range inset for the late spikes) vs.\ GRPO step. Faint = per-step; bold =
-  $100$-step running mean. Reward peaks near step $450$ then collapses.}
+  \includegraphics[width=0.40\textwidth]{baseline_reward.pdf}\hfill
+  \includegraphics[width=0.40\textwidth]{baseline_kl.pdf}
+  \caption{Baseline run \texttt{bdbugenj}: reward $\bar r$ (left; max $10$) and
+  KL (right; inset = full range) vs.\ GRPO step. Faint = per-step; bold =
+  $100$-step mean. Reward peaks near step $450$, then collapses.}
   \label{fig:baseline-curves}
 \end{figure}
 
 \paragraph{Baseline patches.}
-Training ran as-shipped: at launch the tree matched \texttt{324abbe} except a
-two-line home-directory path edit in the \texttt{run\_tmux.sh} launcher;
-the GRPO algorithm and \texttt{config.py} were \emph{unchanged}. Three minor
-fixes, all outside the training loop: \textbf{(1) W\&B routing} ---
-\texttt{config.py} defaults to another account, so we set
-\texttt{WANDB\_ENTITY}/\texttt{WANDB\_PROJECT} via environment (run logged under
-\texttt{sichengma0514-university-of-cambridge/a8-grpo}); \textbf{(2) evaluation
-restore} --- as shipped, \texttt{evaluate.py} wraps the base model in a fresh
-LoRA adapter but never loads a checkpoint, and a zero-initialised adapter is a
-no-op ($\Delta W{=}\tfrac{\alpha}{r}BA$ with $B{=}0$), so it only ever scored the
-\emph{base} model; we added \texttt{-{}-ckpt-dir/-{}-steps/-{}-include-base} flags
-that restore the adapter through Tunix's \texttt{CheckpointManager} (mirroring the
-existing \texttt{chat.py}), leaving the default invocation unchanged;
-\textbf{(3) dataset re-read} --- re-opening the cached TFDS dataset in a fresh
-process throws \texttt{AttributeError: 'FieldDescriptor' object has no attribute
-'label'} under the installed \texttt{protobuf}~7.34 (the attribute was removed in
-\texttt{protobuf}~$\ge$5), so before evaluating we delete the stale prepared
-\texttt{data/\{train,test\}/gsm8k/1.0.0} and let \texttt{evaluate.py} re-prepare
-from the cached raw download in-process --- the same code path training used ---
-needing \emph{no code change}. (We also copied the volatile
-\texttt{/tmp/content/ckpts} to \texttt{\textasciitilde/tpu-2026/ckpts\_backup}.)
+Training ran as-shipped (tree $=$ \texttt{324abbe} up to a two-line path edit in
+the \texttt{run\_tmux.sh} launcher; algorithm and \texttt{config.py}
+\emph{unchanged}). Three fixes, all outside the training loop: \textbf{(1) W\&B routing} ---
+\texttt{config.py} defaults to another account; we set \texttt{WANDB\_ENTITY}
+and \texttt{WANDB\_PROJECT} via environment;
+\textbf{(2) evaluation restore} --- as shipped, \texttt{evaluate.py} never loads
+a checkpoint, and its freshly-built adapter is a no-op
+($\Delta W{=}\tfrac{\alpha}{r}BA$ with $B{=}0$), so it only ever scored the
+\emph{base} model; we added \texttt{-{}-ckpt-dir/-{}-steps} flags that restore
+the adapter via Tunix's \texttt{CheckpointManager} (as in \texttt{chat.py}),
+default invocation unchanged; \textbf{(3) dataset re-read} --- re-opening the
+cached TFDS dataset in a fresh process fails under \texttt{protobuf}~7.34
+(\texttt{FieldDescriptor} lost \texttt{.label} in $\ge$5);
+deleting the prepared \texttt{data/.../gsm8k/1.0.0} lets \texttt{evaluate.py}
+re-prepare in-process from the cached raw download --- training's own code path,
+\emph{no code change}.
 
 % ----------------------------------------------------------------------------
 %  I.2  Understanding the baseline (10 marks) -- at most ONE page, in your own
@@ -202,18 +224,16 @@ and $\pi_{\mathrm{ref}}$ is the fixed base model \texttt{gemma-3-1b-it} without 
 % TODO (b): group size K in config.py, and which advantage estimator Tunix
 % uses -- standard group baseline or leave-one-out?
 \paragraph{(b) Group size $K$ and the advantage estimator.}
-The group size is $K=2$: \texttt{NUM\_GENERATIONS} in \texttt{config.py}, passed as
-\texttt{GRPOConfig(num\_generations$=$2)} in \texttt{train.py}, so each prompt is rolled out
-twice and the pair forms one group. Tunix resolves the estimator by name from a
-registry: \texttt{GRPOConfig.advantage\_estimator} defaults to \texttt{"grpo"} and
-\texttt{train.py} does not override it, which selects \texttt{compute\_advantages} in
-\texttt{tunix/rl/algo\_core.py} --- the \emph{standard} group baseline
-$\hat A_i=(r_i-\bar r)/(\sigma_r+10^{-6})$ with the group's sample std
+$K=2$: \texttt{NUM\_GENERATIONS} in \texttt{config.py}, passed as
+\texttt{GRPOConfig(num\_generations$=$2)} in \texttt{train.py}; each prompt is rolled out
+twice, the pair forming one group. Tunix resolves the estimator from a registry:
+\texttt{advantage\_estimator} defaults to \texttt{"grpo"} (not overridden), selecting
+\texttt{compute\_advantages} in \texttt{tunix/rl/algo\_core.py} --- the \emph{standard}
+group baseline $\hat A_i=(r_i-\bar r)/(\sigma_r+10^{-6})$ with the group's sample std
 (\texttt{ddof}$=$1), \emph{not} leave-one-out (RLOO ships in the same file under the
-separate registry name \texttt{"rloo"}). A consequence of $K{=}2$: $r_i-\bar r=
-\pm\tfrac12(r_1-r_2)$ and $\sigma_r=|r_1-r_2|/\sqrt2$, so whenever the two rewards differ
-at all, $\hat A_i=\pm1/\sqrt2$ \emph{regardless of the margin}, and $\hat A_i\approx0$ on
-ties --- the advantage carries only the sign of the within-pair comparison.
+separate name \texttt{"rloo"}). With $K{=}2$, $r_i-\bar r=\pm\tfrac12(r_1-r_2)$ and
+$\sigma_r=|r_1-r_2|/\sqrt2$: whenever the rewards differ, $\hat A_i=\pm1/\sqrt2$
+\emph{regardless of margin}; ties give $\hat A_i\approx0$.
 
 % TODO (c): in rewards.py, which terms are shaping rewards and which is the
 % "true" correctness reward? In terms of within-group reward variance sigma_r,
@@ -226,40 +246,35 @@ correctness reward is \texttt{check\_answer}: it extracts the \texttt{<answer>} 
 full-template regex and grades the number ($+3$ exact, $+1.5$ after stripping, $+0.5/{+}0.25$
 within $10/20\%$, $-1$ wrong, $-0.5$ unparseable). \texttt{check\_numbers} ($+1.5$ iff
 \emph{any} number after \texttt{<answer>} equals the gold answer) is a binary correctness
-\emph{fallback} that also shapes towards emitting an extractable number at all. With the
+\emph{fallback}, itself shaping towards an extractable number. With the
 correctness reward alone, early in training the per-rollout success probability $p$ is tiny
-(doubly so for \texttt{check\_answer}, which is gated on the template parsing), so both
+(doubly so for \texttt{check\_answer}, gated on template parsing), so both
 rollouts of a group almost surely receive the \emph{same} reward: a group is informative only
 when the two disagree, with probability $2p(1-p)\approx2p\to0$ (for a binary reward of size
 $c$, $\mathbb{E}[\sigma_r^2]=c^2p(1-p)$). Every degenerate group has $r_i=\bar r$, hence
 $\hat A_i=0$ and a zero policy-gradient term. The graded format
 terms already differ between two \emph{wrong} answers, keeping $\sigma_r>0$ (and, by (b),
-$|\hat A_i|=1/\sqrt2$) from the first steps; this is what lets training start, and equally
-what the run later exploits when format is optimised at the expense of correctness
-(Sec.~\ref{sec:reproduce}).
+$|\hat A_i|=1/\sqrt2$) from the first steps --- letting training start, and later letting
+format be optimised at correctness's expense (Sec.~\ref{sec:reproduce}).
 
 % TODO (d): where is the clipped (PPO-style) surrogate implemented in Tunix,
 % and what does the clip range epsilon correspond to in config.py? Note any
 % deviation from the lecture form (e.g. per-token vs per-sequence ratio).
 \paragraph{(d) The clipped surrogate and $\varepsilon$.}
-The clip is implemented in \texttt{grpo\_loss\_fn} in \texttt{tunix/rl/algo\_core.py}
-(registered as policy loss \texttt{"grpo"}): per-token log-ratios are exponentiated to
+The clip is implemented in \texttt{grpo\_loss\_fn}, the registered \texttt{"grpo"}
+policy loss in \texttt{tunix/rl/algo\_core.py}: per-token log-ratios are exponentiated to
 $\rho_t$ and the per-token loss is
-$\max\bigl(-\hat A\,\rho_t,\,-\hat A\,\mathrm{clip}(\rho_t,1-\varepsilon,1+\varepsilon)\bigr)$,
+$\max\bigl(-\hat A\,\rho_t,\,-\hat A\,\mathrm{clip}_{1\pm\varepsilon}(\rho_t)\bigr)$,
 the lecture objective with $\varepsilon=\texttt{EPSILON}=0.2$ from \texttt{config.py} (via
-\texttt{GRPOConfig(epsilon$=$0.2)}; the upper bound $\varepsilon_{\mathrm{high}}$ defaults to
-$\varepsilon$, so the clip is symmetric). Two deviations from the lecture form. \emph{(1)
+\texttt{GRPOConfig(epsilon$=$0.2)}). Two deviations from the lecture form. \emph{(1)
 Per-token ratio:} $\rho_t$ is computed per token while $\hat A_i$ is per-sequence, broadcast
 to every completion token, so clipping acts token-wise. \emph{(2) The clip is inert here:}
-with $\mu=\texttt{NUM\_ITERATIONS}=1$ Tunix never computes separate $\pi_{\mathrm{old}}$
-log-probs (\texttt{grpo\_learner.py} does so only for $\mu>1$) and substitutes
-\texttt{stop\_gradient} of the current log-probs, so $\rho_t\equiv1$ in the forward pass, the
-clip never binds (\texttt{pg\_clipfrac}$=0$), and the surrogate reduces to group-relative
-REINFORCE, $-\hat A_i\nabla_\theta\log\pi_\theta$. The KL anchor is a separate additive
-penalty $\beta\,\widehat{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}})$ with $\beta=0.08$,
-estimated per token by the naive $\log\pi_\theta-\log\pi_{\mathrm{ref}}$ (mode
-\texttt{"kl"}: unbiased but sign-indefinite --- and indeed ${\sim}1.5\%$ of the logged
-steps dip marginally below zero).
+with $\mu=\texttt{NUM\_ITERATIONS}=1$ Tunix computes no separate $\pi_{\mathrm{old}}$
+log-probs, substituting \texttt{stop\_gradient} of the current ones: $\rho_t\equiv1$ in
+the forward pass, the clip never binds (\texttt{pg\_clipfrac}{=}0), and the surrogate
+reduces to group-relative REINFORCE $-\hat A_i\nabla_\theta\log\pi_\theta$. The KL anchor is a separate additive penalty with $\beta=0.08$, estimated per token by
+the naive $\log\pi_\theta-\log\pi_{\mathrm{ref}}$ \citep{schulman2020kl} ---
+sign-indefinite, and indeed ${\sim}1.5\%$ of logged steps dip below zero.
 
 % ----------------------------------------------------------------------------
 %  I.3  Improving on the baseline (30 marks)
@@ -279,55 +294,90 @@ steps dip marginally below zero).
 %   - Optimisation/capacity: LoRA rank, learning rate, schedule, generation
 %     length -- trade-off in KL budget vs effective sample size.
 \paragraph{Motivation.}
-\textit{TODO: name the modification and justify it from the theory in one short paragraph.}
+Sec.~\ref{sec:reproduce} ends in collapse; we test two theory-grounded repairs.
+\emph{(i)~The KL trust region.} In the regularised update of I.4~Q2,
+$\beta\,\mathrm{KL}(\pi_\theta\|\pi_{\mathrm{ref}})$ bounds drift and, with it, reward
+hacking \citep{schulman2015trpo,shao2024deepseekmath}. Prediction: $\beta{:}\,0.08{\to}0.3$
+(R1) preserves held-out accuracy; $\beta{=}0$ (R4, planned as a \emph{negative control},
+though DAPO advocates it) worsens the collapse. \emph{(ii)~Reward misspecification.} By
+I.2(c) the shaping terms can carry $\bar r$ without correctness; R2 adds DAPO's soft
+over-long penalty \citep[Eq.~13]{yu2025dapo} ($0$ ramping to $-1$ over $1500$--$3000$
+chars), removing the verbosity incentive without touching the correctness terms.
 
 \paragraph{Controlled comparison.}
-\textit{TODO: state what is held fixed (data, eval split, total/normalised compute, seeds) and what changes.}
+One knob per run, everything else fixed (same data and \texttt{seed}{=}42, same
+$\varepsilon,K,$ LR; full $3364$ steps each --- shortening would rescale the LR
+schedule): an in-protocol baseline re-run R0, plus R1/R2/R4
+(W\&B:
+\href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/8c2785ut}{R0},
+\href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/9p3kota8}{R1},
+\href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/xt3d5b0e}{R2},
+\href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/082vyug5}{R4}).
+Every model is scored on the \emph{same} held-out split ($N{=}64$ GSM8K-test prompts,
+greedy; this pipeline materialises the seed-42 split from HF rather than TFDS, so base
+differs from Table~\ref{tab:baseline-acc}: $45.3$ vs $51.6$, CIs overlapping ---
+within-table comparisons are like-for-like) at two checkpoints under one rule:
+\emph{final} (step 3364) and \emph{best-val} (checkpoint nearest the arg-max of held-out
+reward; checkpoints every 100 steps). Uncertainty: bootstrap $95\%$ CIs over prompts.
 
-% TODO (a): table comparing base model, baseline GRPO checkpoint, and your
-% improved checkpoint(s) on held-out GSM8K, WITH seeds and a measure of
-% uncertainty (second seed or bootstrap CI over the eval prompts).
 \begin{table}[h]
   \centering
-  \caption{Held-out GSM8K: base vs.\ baseline vs.\ improved, with seeds and a measure of uncertainty (second seed / bootstrap CI). \emph{TODO.}}
+  \caption{Held-out GSM8K exact-match (\%, $N{=}64$, greedy, bootstrap $95\%$ CI) at the
+  best-val and final checkpoints, and format accuracy at final.}
   \label{tab:improve-acc}
+  \small
   \begin{tabular}{llccc}
     \toprule
-    Run & Change & Acc.\ (\%) $\pm$ CI & Mean reward & Final KL \\
+    Run & Change & Best-val \% (step) & Final \% & Format@final \% \\
     \midrule
-    Base \texttt{gemma-3-1b-it}     & ---                        & TODO & --- & --- \\
-    Baseline GRPO                   & default \texttt{config.py} & TODO & TODO & TODO \\
-    Variant A                       & \textit{TODO}              & TODO & TODO & TODO \\
-    Variant B (2nd seed / 2nd mod)  & \textit{TODO}              & TODO & TODO & TODO \\
+    Base \texttt{gemma-3-1b-it} & ---                & ---                   & 45.3 [32.8, 57.8] & 1.6 \\
+    R0 (baseline)               & default, $\beta{=}0.08$ & 42.2 [29.7, 54.7] (700)  & 0.0 \phantom{0}[0.0, 0.0]\phantom{0} & 7.8 \\
+    R1                          & $\beta{=}0.3$      & 43.8 [31.2, 56.2] (600)  & 0.0 \phantom{0}[0.0, 0.0]\phantom{0} & 0.0 \\
+    R2                          & $+$ length penalty & 25.0 [15.6, 35.9] (400)  & 39.1 [28.1, 51.6] & 79.7 \\
+    R4                          & $\beta{=}0$        & \textbf{51.6} [39.1, 64.1] (1300) & \textbf{46.9} [34.4, 59.4] & \textbf{96.9} \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-% TODO (b): training curves of mean reward AND KL for the baseline and your
-% variants on a SINGLE set of axes.
-\begin{figure}[h]
+\begin{figure}[t]
   \centering
-  % \includegraphics[width=0.48\textwidth]{improve_reward.pdf}\hfill
-  % \includegraphics[width=0.48\textwidth]{improve_kl.pdf}
-  \caption{Mean reward (left) and KL (right) for the baseline and your variants on shared axes. \emph{TODO.}}
+  \includegraphics[width=0.41\textwidth]{i3_reward.pdf}\hfill
+  \includegraphics[width=0.41\textwidth]{i3_kl.pdf}
+  \caption{All runs, shared axes ($100$-step means; dots = best-val checkpoints). Left:
+  reward --- R4 alone does not decay; R1 falls to $-2.5$, the approximate-format
+  \emph{floor}. Right: KL --- R1 drifts \emph{most} (spikes to $33$) despite the largest
+  $\beta$.}
   \label{fig:improve-curves}
 \end{figure}
 
-% TODO (c): ONE diagnostic plot addressing a known GRPO failure mode -- e.g.
-% distribution of A_hat_i over training, fraction of degenerate groups (all K
-% rewards equal), response length / entropy of pi_theta over time, or KL vs
-% task accuracy.
-\begin{figure}[h]
+\begin{figure}[t]
   \centering
-  % \includegraphics[width=0.6\textwidth]{diagnostic.pdf}
-  \caption{Diagnostic for a known GRPO failure mode (e.g.\ fraction of degenerate groups where all $K$ rewards are equal, or the $\hat A_i$ distribution over training). \emph{TODO.}}
+  \includegraphics[width=0.82\textwidth]{i3_decomp.pdf}
+  \caption{Diagnostic (reward hacking): per-term decomposition. In R0 the format terms
+  sit near their maxima while \texttt{check\_answer} never exceeds ${\sim}1.2$ and ends
+  \emph{negative} ($-0.38$: parsed but wrong) --- shaping, not correctness, carries
+  $\bar r$; in R4 every term stays healthy.}
   \label{fig:diagnostic}
 \end{figure}
 
-% TODO (d): discuss how your empirical findings connect to the lecture theory,
-% INCLUDING any prediction you contradicted. Honest negative results are in scope.
 \paragraph{Discussion.}
-\textit{TODO: connect your findings to the theory; report any contradicted prediction (``we tried X, theory predicted Y, we observed Z'').}
+Both $\beta$ predictions were contradicted. Tripling $\beta$ did not protect accuracy:
+R1 collapsed \emph{harder} (to the shaping floor: ${\sim}112$-token completions with no
+template tags) and drifted \emph{more} (Fig.~\ref{fig:improve-curves}, right). With the
+misspecified reward of I.2(c) the leash has nothing good to pull towards, and the naive
+sign-indefinite KL estimator (I.2(d)) means a large $\beta$ amplifies gradient noise once
+drift grows. Conversely the $\beta{=}0$ ``negative control'' won (as DAPO argues
+\citep{yu2025dapo}): format $1.6\%{\to}96.9\%$ at base-parity exact-match ($46.9$/$51.6$
+vs.\ $45.3$; CIs overlap at $N{=}64$, so we claim parity, not improvement). The effective
+stabiliser is the \emph{implicit} trust region already present --- rank-$64$ adapters, LR
+$3{\times}10^{-6}$, grad clip $0.1$ (cf.\ I.2(a)). On the reward axis, R2's final
+checkpoint alone stays healthy ($39.1\%$), consistent with the misspecification
+diagnosis; but the penalty only clipped the verbose tail (active on $29\%$ of steps,
+mean $-0.07$), and one seed cannot exclude run-to-run variance (R0 vs I.1-run KL peaks:
+$4.3$ vs $41$ at identical config --- collapse systematic, severity stochastic). Finally,
+a selection artifact: R2's best-\emph{val} checkpoint ($400$, $25.0\%$) is far worse than
+its final --- validation \emph{shaped} reward is itself hackable; select by a
+correctness-only signal instead.
 
 % ============================================================================
 %  I.4  GRPO THEORY -- written questions (40 marks)
