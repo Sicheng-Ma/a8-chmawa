@@ -72,7 +72,7 @@ def main():
 
     # ---- reward ----
     rstep, rval = series(ea, REWARD_TAG)
-    fig, ax = plt.subplots(figsize=(4.2, 3.1))
+    fig, ax = plt.subplots(figsize=(4.2, 2.3))
     ax.plot(rstep, rval, color="tab:blue", alpha=0.20, lw=0.7)
     ax.plot(rstep, rolling(rval, args.window), color="tab:blue", lw=1.8,
             label=fr"train $\bar r$ ({args.window}-step mean)")
@@ -98,7 +98,7 @@ def main():
     # ---- KL (zoomed main axis + full-range inset for the spikes) ----
     kstep, kval = series(ea, KL_TAG)
     ksm = rolling(kval, args.window)
-    fig, ax = plt.subplots(figsize=(4.2, 3.1))
+    fig, ax = plt.subplots(figsize=(4.2, 2.3))
     ax.plot(kstep, kval, color="tab:red", alpha=0.20, lw=0.7)
     ax.plot(kstep, ksm, color="tab:red", lw=1.8, label=fr"{args.window}-step mean")
     ax.set_xlabel("GRPO step")
