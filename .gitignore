@@ -57,3 +57,6 @@ report/*.synctex.gz
 report/*.toc
 report/*.lof
 report/*.lot
+
+# backup from GCP
+chmawa_backup/

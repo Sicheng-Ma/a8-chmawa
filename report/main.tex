@@ -412,15 +412,112 @@ $h_i=\nabla_\theta\log\pi_\theta(a_i\mid q)\in\mathbb{R}^d$, define
 \end{equation}
 
 \paragraph{(i) $\mathbb{E}[X_i]$, $\mathbb{E}[\hat g]$, and why the true gradient need not vanish. \hfill\textnormal{[2]}}
-\textit{TODO: compute $\mathbb{E}[X_i]$ and hence $\mathbb{E}[\hat g]$; in $\le 2$ sentences explain why $\mathbb{E}[\hat g]=0$ here does \emph{not} mean the underlying policy gradient vanishes (responses are held fixed; the expectation over rewards differs from the expectation over the sampling distribution).}
+Since each $h_i$ is deterministic, $\mathbb{E}[X_i]=h_i\,\mathbb{E}[\hat A_i]$, and the
+normalised advantage is mean-zero:
+\begin{equation}
+  \mathbb{E}[\hat A_i]
+  \;=\; \frac{\mathbb{E}[r_i]-\mathbb{E}[\bar r]}{\sigma_r}
+  \;=\; \frac{\mu-\mu}{\sigma_r}
+  \;=\; 0 ,
+  \label{eq:q1-meanzero}
+\end{equation}
+because $\mathbb{E}[r_i]=\mathbb{E}[\bar r]=\mu$. Hence $\mathbb{E}[X_i]=0$ and
+$\mathbb{E}[\hat g]=\tfrac{1}{K}\sum_{i=1}^{K}\mathbb{E}[X_i]=0$.
+This does not imply the \emph{true} policy gradient vanishes. Here $\mathbb{E}[\hat g]=0$ holds
+\emph{by construction}: the responses $a_i$ (hence the scores $h_i$) are held fixed, and the
+group-centred advantage makes $\mathbb{E}[\hat A_i]=0$ termwise. The genuine policy gradient is
+instead an expectation over actions \emph{drawn from the policy},
+$\nabla_\theta J=\mathbb{E}_{a\sim\pi_\theta(\cdot\mid q)}[\nabla_\theta\log\pi_\theta(a\mid q)\,A(a)]$,
+which need not vanish. Indeed, removing the centring leaves
+$\mathbb{E}\bigl[\tfrac{1}{K}\sum_i h_i r_i\bigr]=\mu\,\bar h$, generically nonzero
+(with $\bar h=\tfrac{1}{K}\sum_i h_i$): it is the baseline subtraction under fixed responses,
+not a stationary policy, that drives $\mathbb{E}[\hat g]$ to~$0$.
 
 \paragraph{(ii) $\mathrm{Cov}(X_i,X_j)$ for $i\neq j$. \hfill\textnormal{[6]}}
-\textit{TODO: identify the shared random term that couples the $X_i$ (the common $\bar r$); compute $\mathrm{Cov}(X_i,X_j)$ in terms of the outer product $h_i h_j^{\top}$ and the moments of $r$; state the sign of the result and explain intuitively why it arises.}
+Since $\mathbb{E}[X_i]=0$ (part i), the cross-covariance equals the centred second moment, and
+the deterministic scores factor out of the expectation:
+\begin{equation}
+  \mathrm{Cov}(X_i,X_j)=\mathbb{E}[X_iX_j^{\top}]=h_ih_j^{\top}\,\mathbb{E}[\hat A_i\hat A_j],
+  \label{eq:q1-cov-factor}
+\end{equation}
+so the problem reduces to the scalar $\mathbb{E}[\hat A_i\hat A_j]$. Substituting
+$\hat A_k=(r_k-\bar r)/\sigma_r$ (with $\mathbb{E}[r_k-\bar r]=0$, this is again a covariance),
+the shared mean $\bar r$ couples the two factors \emph{even though} $r_i\perp r_j$; expanding by
+bilinearity, with $\mathrm{Cov}(r_i,r_j)=\sigma^2\delta_{ij}$ and
+$\mathrm{Cov}(r_i,\bar r)=\mathrm{Var}(\bar r)=\sigma^2/K$,
+\begin{align*}
+  \mathbb{E}[\hat A_i\hat A_j]
+    &= \frac{1}{\sigma_r^{2}}\,\mathrm{Cov}(r_i-\bar r,\;r_j-\bar r) \\
+    &= \frac{1}{\sigma_r^{2}}\Bigl[\,\underbrace{\mathrm{Cov}(r_i,r_j)}_{0\ (i\neq j)}
+       -\mathrm{Cov}(r_i,\bar r)-\mathrm{Cov}(\bar r,r_j)+\mathrm{Var}(\bar r)\Bigr] \\
+    &= \frac{1}{\sigma_r^{2}}\left(0-\frac{\sigma^2}{K}-\frac{\sigma^2}{K}+\frac{\sigma^2}{K}\right)
+     = -\frac{\sigma^2}{K\sigma_r^{2}}.
+\end{align*}
+Hence, for $i\neq j$,
+\begin{equation}
+  \mathrm{Cov}(X_i,X_j)=-\frac{\sigma^2}{K\sigma_r^{2}}\,h_ih_j^{\top}
+  \;=\;-\frac{1}{K}\,h_ih_j^{\top}\quad(\sigma_r=\sigma).
+  \label{eq:q1-cov}
+\end{equation}
+The scalar prefactor is \emph{negative}, so distinct normalised advantages are negatively
+correlated. The coupling runs entirely through the shared group mean: a reward above $\bar r$
+inflates the mean and pushes every other centred advantage down. Equivalently
+$\sum_i\hat A_i\equiv0$, so the advantages cannot all move together --- the off-diagonal
+covariances must be negative to offset the diagonal variances.
 
 \paragraph{(iii) $\mathrm{Var}(\hat g)$ and the effective sample size $K_{\mathrm{eff}}$. \hfill\textnormal{[7]}}
-\textit{TODO: compute $\mathrm{Var}(\hat g)\in\mathbb{R}^{d\times d}$; compare with the naive i.i.d.\ expectation $\tfrac{1}{K}\mathrm{Var}(X_1)$; use the discrepancy to \emph{define} an effective sample size $K_{\mathrm{eff}}$, give an explicit expression in terms of $\mathrm{Var}(X_1)$, and comment on large $K$ and on the case where all $h_i$ are aligned.}
+First we expand the variance by definition:
+\begin{equation}
+  \mathrm{Var}(\hat g)=\frac{1}{K^2}\Bigl[\sum_{i}\mathrm{Var}(X_i)+\sum_{i\neq j}\mathrm{Cov}(X_i,X_j)\Bigr].
+  \label{eq:q1-varg}
+\end{equation}
+The off-diagonal terms are Eq.~\eqref{eq:q1-cov}; the diagonal is
+$\mathrm{Var}(X_i)=\mathrm{Var}(\hat A_i)\,h_ih_i^{\top}$ with
+\begin{equation}
+  \mathrm{Var}(\hat A_i)=\frac{\mathrm{Var}(r_i-\bar r)}{\sigma_r^{2}}
+  =\frac{\sigma^2-2\sigma^2/K+\sigma^2/K}{\sigma_r^{2}}
+  =\frac{K-1}{K}\,\frac{\sigma^2}{\sigma_r^{2}}.
+  \label{eq:q1-vara}
+\end{equation}
+Write $S=\sum_i h_ih_i^{\top}$ and $\bar h=\tfrac1K\sum_i h_i$, so that
+$\sum_{i\neq j}h_ih_j^{\top}=K^2\bar h\bar h^{\top}-S$. The off-diagonal $-\tfrac1K$ exactly
+fills the diagonal deficit $\tfrac{K-1}{K}$, so the coefficient of $S$ collapses to
+$\sigma^2/\sigma_r^{2}$:
+\begin{align}
+  \mathrm{Var}(\hat g)
+    &=\frac{1}{K^2}\Bigl[\frac{K-1}{K}\frac{\sigma^2}{\sigma_r^{2}}\,S
+       -\frac{\sigma^2}{K\sigma_r^{2}}\bigl(K^2\bar h\bar h^{\top}-S\bigr)\Bigr]\nonumber\\
+    &=\frac{\sigma^2}{K^2\sigma_r^{2}}\bigl(S-K\bar h\bar h^{\top}\bigr)
+     =\frac{\sigma^2}{K^2\sigma_r^{2}}\sum_{i=1}^{K}(h_i-\bar h)(h_i-\bar h)^{\top}.
+  \label{eq:q1-varg-result}
+\end{align}
+
+\noindent\textbf{Comparison.} The naive i.i.d.\ guess $\tfrac1K\mathrm{Var}(X_1)$ keeps the raw
+outer product $h_1h_1^{\top}$, whereas the true variance depends only on the \emph{centred}
+scores $h_i-\bar h$: the group baseline removes the common component $\bar h$ from every score,
+leaving only their spread about the mean.
+
+\smallskip\noindent\textbf{Effective sample size.} Matching the i.i.d.\ form
+$\mathrm{Var}(\hat g)=\tfrac{1}{K_{\mathrm{eff}}}\mathrm{Var}(X_1)$ via the total variance defines
+\begin{equation}
+  K_{\mathrm{eff}}:=\frac{\mathrm{tr}\,\mathrm{Var}(X_1)}{\mathrm{tr}\,\mathrm{Var}(\hat g)}
+  =\frac{K(K-1)\,\lVert h_1\rVert^2}{\sum_{i}\lVert h_i-\bar h\rVert^2},
+  \label{eq:q1-keff}
+\end{equation}
+the number of independent draws of $X_1$ that would reproduce $\hat g$'s variance (the scale
+$\sigma^2/\sigma_r^{2}$ cancels).
+
+\smallskip\noindent\textbf{Limits.} \emph{(i) Large $K$:} if the scores stay spread so that
+$\sum_i\lVert h_i-\bar h\rVert^2=\Theta(K)$, then $\mathrm{Var}(\hat g)=\Theta(1/K)$ and
+$K_{\mathrm{eff}}=\Theta(K)$. \emph{(ii) Aligned scores}
+($h_i\equiv h$): $h_i-\bar h=0$, so $\mathrm{Var}(\hat g)=0$ and 
+$\hat g=h\,\tfrac1K\sum_i\hat A_i\equiv0$ because $\sum_i\hat A_i\equiv0$. Formally
+$K_{\mathrm{eff}}\to\infty$ which is degeneracy since identical rollouts carry
+\emph{no} gradient signal; this is the same vanishing-update failure as an all-equal-reward group in
+I.2(c).
 
 % ---- Q2 -------------------------------------------------------------------
+\newpage
 \subsection{KL-regularised policy improvement and the clipped surrogate}
 \label{sec:theory-q2}
 Let $\mathcal{A}$ be an action space and $\pi_t$ the policy at iteration $t$, with
@@ -435,10 +532,66 @@ Consider the regularised update
 \end{equation}
 
 \paragraph{(i) Unique optimiser of \eqref{eq:q2-update} and the role of $\eta$. \hfill\textnormal{[3]}}
-\textit{TODO: derive the unique maximiser (softmax tilt of $\pi_t$ by $\eta A_t$) and explain $\eta$ as a step-size parameter.}
+This is a constrained optimisation problem with a Lagrange multiplier $\lambda$ for $\sum_a\pi(a)=1$.
+\begin{equation}
+  \mathcal{L}(\pi,\lambda)=\sum_a\pi(a)A_t(a)-\frac1\eta\sum_a\pi(a)\log\frac{\pi(a)}{\pi_t(a)}
+  -\lambda\Bigl(\sum_a\pi(a)-1\Bigr).
+  \label{eq:q2-lagrangian}
+\end{equation}
+By taking the derivative with respect to $\pi(a)$, we have $\partial_{\pi(a)}[\pi\log(\pi/\pi_t)]=\log(\pi(a)/\pi_t(a))+1$.
+This gives the stationarity condition
+\begin{equation}
+  A_t(a)-\frac1\eta\Bigl(\log\frac{\pi(a)}{\pi_t(a)}+1\Bigr)-\lambda=0
+  \quad\Longrightarrow\quad
+  \pi(a)\propto\pi_t(a)\,e^{\eta A_t(a)}.
+  \label{eq:q2-stationarity}
+\end{equation}
+Incorporating the normalising constant $Z=\sum_{a'}\pi_t(a')\,e^{\eta A_t(a')}$ gives the unique optimiser:
+\begin{equation}
+  \pi_{t+1}(a)=\frac{\pi_t(a)\,e^{\eta A_t(a)}}{\sum_{a'}\pi_t(a')\,e^{\eta A_t(a')}}
+  =\frac1Z\,\pi_t(a)\,e^{\eta A_t(a)}.
+  \label{eq:q2-softmax}
+\end{equation}
+The role of $\eta$ as a step-size parameter could be shown by expanding \eqref{eq:q2-softmax} to first order in $\eta$:
+\[
+  \pi_{t+1}(a)\approx\pi_t(a)\bigl[1+\eta\bigl(A_t(a)-\mathbb{E}_{\pi_t}[A_t]\bigr)\bigr],
+\]
+i.e. $\pi_{t+1}-\pi_t \approx \eta\,\pi_t\,(A_t-\mathbb{E}_{\pi_t}[A_t])$, which is a small update in the direction of the advantage function, scaled by $\eta$.
 
 \paragraph{(ii) Monotone improvement and where it fails. \hfill\textnormal{[5]}}
-\textit{TODO: with $J(\pi)=\mathbb{E}_{a\sim\pi}[A^{\pi_t}(a)]$ and exact advantage $A_t=A^{\pi_t}$, show \eqref{eq:q2-update} guarantees $J(\pi_{t+1})\ge J(\pi_t)$; identify one practical condition under which this guarantee fails for a neural-network policy (e.g.\ stale / estimated advantage, function-approximation error, finite-sample KL).}
+We start by substituting the exact advantage to the performance of $\pi_t$
+\begin{equation}
+  J(\pi_t)=\mathbb{E}_{a\sim\pi_t}\!\bigl[A^{\pi_t}(a)\bigr]=0 .
+  \label{eq:q2-baseline}
+\end{equation}
+Since $\pi_{t+1}$ maximises \eqref{eq:q2-update}, its value beats any $\pi$;
+We then evaluate that bound at $\pi=\pi_t$, where the KL term vanishes.
+\begin{equation}
+  \mathbb{E}_{a\sim\pi_{t+1}}\!\bigl[A_t(a)\bigr]-\frac1\eta\mathrm{KL}(\pi_{t+1}\|\pi_t)
+  \;\ge\;
+  \mathbb{E}_{a\sim\pi_t}\!\bigl[A_t(a)\bigr]-\frac1\eta\underbrace{\mathrm{KL}(\pi_t\|\pi_t)}_{=0}
+  \;=\;0 .
+  \label{eq:q2-opt}
+\end{equation}
+Rearrange the terms to get a lower bound on the performance of $\pi_{t+1}$, which is non-negative, hence 
+monotone improvement of the performance of $\pi_t$ (equality holds iff $\pi_{t+1}=\pi_t$)
+\begin{equation}
+  J(\pi_{t+1})=\mathbb{E}_{a\sim\pi_{t+1}}\!\bigl[A_t(a)\bigr]
+  \;\ge\;\frac1\eta\mathrm{KL}(\pi_{t+1}\|\pi_t)\;\ge\;0=J(\pi_t).
+  \label{eq:q2-monotone}
+\end{equation}
+This guarantee hinges on the \emph{exact} advantage $A_t=A^{\pi_t}$: that is what identifies
+$\mathbb{E}_{a\sim\pi_{t+1}}[A_t]$ with $J(\pi_{t+1})$ in \eqref{eq:q2-monotone}. With an estimated or
+stale $\hat A_t\neq A^{\pi_t}$, \eqref{eq:q2-opt} only certifies improvement of the \emph{surrogate}
+$\mathbb{E}[\hat A_t]$, while the true performance carries an extra bias
+\begin{equation}
+  J(\pi_{t+1})=\mathbb{E}_{a\sim\pi_{t+1}}\!\bigl[\hat A_t\bigr]
+  +\mathbb{E}_{a\sim\pi_{t+1}}\!\bigl[A^{\pi_t}-\hat A_t\bigr],
+  \label{eq:q2-bias}
+\end{equation}
+whose second term can be negative, so $J(\pi_{t+1})\ge J(\pi_t)$ no longer holds. (Separately, with a
+neural-network $\pi_\theta$ or a noisy finite-sample KL, $\pi_{t+1}$ is not the exact maximiser and
+\eqref{eq:q2-opt} itself fails.)
 
 \paragraph{(iii) Trust region of the clipped surrogate vs.\ the KL constraint. \hfill\textnormal{[2]}}
 With $\pi_{\mathrm{old}}=\pi_t$, $a_t\sim\pi_{\mathrm{old}}(\cdot\mid q)$,
@@ -449,9 +602,27 @@ With $\pi_{\mathrm{old}}=\pi_t$, $a_t\sim\pi_{\mathrm{old}}(\cdot\mid q)$,
   \mathrm{clip}(\rho_t(\theta),1-\varepsilon,1+\varepsilon)\hat A_t\bigr)\Bigr].
   \label{eq:q2-clip}
 \end{equation}
-\textit{TODO: describe the per-sample trust region the clip induces, contrast it with the single joint constraint $\mathrm{KL}(\pi_\theta(\cdot\mid q)\|\pi_{\mathrm{old}}(\cdot\mid q))\le\delta$ implicit in \eqref{eq:q2-update}, and state at least one qualitative difference.}
+The clip caps the surrogate as soon as a sample's ratio leaves the band (in the objective-improving
+direction, through the $\min$), freezing its gradient, so the trust region it enforces is a per-sample
+box on the likelihood ratio
+\begin{equation}
+  \rho_t(\theta)\in[\,1-\varepsilon,\;1+\varepsilon\,]\qquad\text{(one box per sampled }a_t).
+  \label{eq:q2-clipband}
+\end{equation}
+This contrasts with the single aggregate constraint implicit in \eqref{eq:q2-update},
+\begin{equation}
+  \mathrm{KL}\bigl(\pi_\theta(\cdot\mid q)\,\|\,\pi_{\mathrm{old}}(\cdot\mid q)\bigr)
+  =\sum_a \pi_\theta(a\mid q)\log\frac{\pi_\theta(a\mid q)}{\pi_{\mathrm{old}}(a\mid q)}\;\le\;\delta ,
+  \label{eq:q2-klball}
+\end{equation}
+which couples all actions and weights each by its probability mass. The qualitative difference is that
+the clip acts coordinate-wise on each sampled action and is blind to probability mass, so many in-band
+moves can still accumulate into a large total KL, whereas \eqref{eq:q2-klball} bounds that aggregate
+divergence directly. Outside the band the clip gives zero gradient hence no restoring pull back
+towards $\pi_{\mathrm{old}}$, whereas the KL penalty grows with the deviation.
 
 % ---- Q3 -------------------------------------------------------------------
+\newpage
 \subsection{Mixture-proposal sampling, importance correction, and weight collapse}
 \label{sec:theory-q3}
 Fix $q$ and a fixed sampling policy $\pi_{\mathrm{old}}(\cdot\mid q)$; let
