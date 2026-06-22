@@ -657,8 +657,8 @@ Consider instead the mixture proposal
 with $\pi_{\mathrm{unif}}$ uniform over responses.
 
 \paragraph{(i) Importance-corrected estimator $\hat g_{\mathrm{mix}}$. \hfill\textnormal{[3]}}
-We start from the standard policy gradient, in which the expectation is over the old policy $\pi_{\mathrm{old}}$;
-then we importance-sample from the mixture $\pi_{\mathrm{mix}}$ to get an unbiased estimator
+We start from the standard policy gradient, whose expectation is over the old policy $\pi_{\mathrm{old}}$,
+and change measure to the mixture $\pi_{\mathrm{mix}}$ by importance sampling:
 \begin{equation}
 \begin{aligned}
   g&=\mathbb{E}_{a\sim\pi_{\mathrm{old}}}\!\bigl[\nabla_\theta\log\pi_\theta(a\mid q)\,\hat A\bigr]\\
@@ -669,10 +669,10 @@ then we importance-sample from the mixture $\pi_{\mathrm{mix}}$ to get an unbias
 The Monte-Carlo estimate of \eqref{eq:q3-is} with $K$ draws from $\pi_{\mathrm{mix}}$ gives
 \begin{equation}
   \hat g_{\mathrm{mix}}=\frac1K\sum_{i=1}^K w_i\,\nabla_\theta\log\pi_\theta(a_i\mid q)\,\hat A_i,
-  \qquad a_i\sim\pi_{\mathrm{mix}},
+  \qquad a_i\sim\pi_{\mathrm{mix}}.
   \label{eq:q3-gmix}
 \end{equation}
-The explicit weight, by substituting the expression from \eqref{eq:q3-mix} to \eqref{eq:q3-is} is as below 
+Substituting the mixture \eqref{eq:q3-mix} into $w_i=\pi_{\mathrm{old}}/\pi_{\mathrm{mix}}$ gives the explicit weight:
 \begin{equation}
   w_i=\frac{\pi_{\mathrm{old}}(a_i\mid q)}{\pi_{\mathrm{mix}}(a_i\mid q)}
      =\frac{\pi_{\mathrm{old}}(a_i\mid q)}{(1-\alpha)\,\pi_{\mathrm{old}}(a_i\mid q)+\alpha\,\pi_{\mathrm{unif}}(a_i\mid q)}.
@@ -680,7 +680,7 @@ The explicit weight, by substituting the expression from \eqref{eq:q3-mix} to \e
 \end{equation}
 
 \paragraph{(ii) Limit $\alpha\to0$. \hfill\textnormal{[1]}}
-% TODO (your reasoning): as $\alpha\to0$ the proposal, hence the weight, reduces to GRPO.
+As $\alpha\to0$, the mixture \eqref{eq:q3-mix} collapses to $\pi_{\mathrm{old}}$, so the weight tends to $1$ and the estimator reduces to GRPO:
 \begin{equation}
   \alpha\to0:\quad \pi_{\mathrm{mix}}\to\pi_{\mathrm{old}}\ \Longrightarrow\ w_i\to1
   \ \Longrightarrow\ \hat g_{\mathrm{mix}}\to\hat g_{\mathrm{GRPO}}.
@@ -688,54 +688,61 @@ The explicit weight, by substituting the expression from \eqref{eq:q3-mix} to \e
 \end{equation}
 
 \paragraph{(iii) The shifted group mean. \hfill\textnormal{[1+2]}}
-% TODO (a, your reasoning): linearity of the mixture.
+(a) Since $V^{\pi}$ is linear in $\pi$ and $\pi_{\mathrm{mix}}$ is an $\alpha$-blend, the mixture value is the same blend of the component values:
 \begin{equation}
   V^{\pi_{\mathrm{mix}}}(q)=(1-\alpha)\,V^{\pi_{\mathrm{old}}}(q)+\alpha\,V^{\pi_{\mathrm{unif}}}(q).
   \label{eq:q3-vmix}
 \end{equation}
-% TODO (b, your reasoning): the weights fix the SCORE term but not the baseline -- the plain group
-% mean of mixture samples estimates the shifted $V^{\pi_{\mathrm{mix}}}$, so $w_i$ alone are not enough.
+(b) The weights correct the score term but not the baseline: the plain group mean $\bar r$ averages
+mixture draws, so it estimates the shifted $V^{\pi_{\mathrm{mix}}}$ rather than $V^{\pi_{\mathrm{old}}}$,
+whereas the self-normalised weighted mean $\bar r_w$ recovers $V^{\pi_{\mathrm{old}}}$:
 \begin{equation}
   \mathbb{E}_{\pi_{\mathrm{mix}}}[\bar r]=V^{\pi_{\mathrm{mix}}}(q)\neq V^{\pi_{\mathrm{old}}}(q),
   \qquad
   \bar r_w=\frac{\sum_{j} w_j\,r_j}{\sum_{j} w_j}\ \longrightarrow\ V^{\pi_{\mathrm{old}}}(q).
   \label{eq:q3-baseline}
 \end{equation}
-% TODO (b): the reweighted advantage that restores unbiasedness (use $\bar r_w$ as the baseline).
+Re-centring on $\bar r_w$ gives the reweighted advantage that keeps $\hat g_{\mathrm{mix}}$ unbiased for the $\pi_{\mathrm{old}}$ gradient:
 \begin{equation}
   \tilde A_i=\frac{r_i-\bar r_w}{\sigma_r}.
   \label{eq:q3-Atilde}
 \end{equation}
+Left uncorrected, this shift is a constant $\alpha\bigl(V^{\pi_{\mathrm{old}}}-V^{\pi_{\mathrm{unif}}}\bigr)/\sigma_r$ in
+every advantage; it biases the gradient once $\pi_\theta\neq\pi_{\mathrm{old}}$ and inflates the variance
+otherwise, so re-centring on $\bar r_w$ is necessary.
 
 \paragraph{(iv) Variance comparison. \hfill\textnormal{[4]}}
-% TODO (your reasoning): both are unbiased for the same $g$ (with $\tilde A$), so compare second
-% moments; write $s=\nabla_\theta\log\pi_\theta(a\mid q)\,\hat A$ for the per-sample summand.
+Both are unbiased for the same $g$ (with $\tilde A$ from (iii)), so we compare second moments, with
+$s=\nabla_\theta\log\pi_\theta(a\mid q)\,\hat A$:
 \begin{equation}
   \mathrm{Var}(\hat g_{\mathrm{GRPO}})=\tfrac1K\mathrm{Var}_{\pi_{\mathrm{old}}}[s],\qquad
   \mathrm{Var}(\hat g_{\mathrm{mix}})=\tfrac1K\mathrm{Var}_{\pi_{\mathrm{mix}}}[w\,s].
   \label{eq:q3-var}
 \end{equation}
-% TODO (your reasoning): the only change is $w$ inside the second moment -- variance INCREASES if the
-% reward/advantage mass sits where $\pi_{\mathrm{old}}$ is large ($w>1$), DECREASES if it sits where
-% $\pi_{\mathrm{old}}$ is small ($w<1$, i.e. the uniform part improves coverage of the integrand).
+Only the weight $w$ changes the GRPO second moment $\mathbb{E}_{\pi_{\mathrm{old}}}[s^2]$:
 \begin{equation}
   \mathbb{E}_{\pi_{\mathrm{mix}}}\!\bigl[w^2 s^2\bigr]=\mathbb{E}_{\pi_{\mathrm{old}}}\!\bigl[w\,s^2\bigr],
   \qquad
   w=\frac{1}{(1-\alpha)+\alpha\,\pi_{\mathrm{unif}}/\pi_{\mathrm{old}}}\ \gtrless\ 1 .
   \label{eq:q3-var2}
 \end{equation}
+So mixing \emph{increases} the variance when $R$ puts large advantage where $\pi_{\mathrm{old}}$ is
+large ($w>1$), and \emph{decreases} it where $\pi_{\mathrm{old}}$ is small ($w<1$, the uniform part
+adding coverage).
 
 \paragraph{(v) Weight collapse for long responses. \hfill\textnormal{[2+2]}}
 Assume the per-token ratio $\pi_{\mathrm{old}}(a_{i,t}\mid q,a_{i,<t})/\pi_{\mathrm{mix}}(a_{i,t}\mid q,a_{i,<t})=c$ is constant, so the full-response weight is $w_i=c^{T}$ for $T$ tokens.
-% TODO (a, your reasoning): Jensen on the per-token log-weight gives $c<1$ (strict for $\alpha>0$),
-% so the full-response weight vanishes.
+(a) The per-token weight has mean $1$ under $\pi_{\mathrm{mix}}$, so by Jensen
+$\log c=\mathbb{E}_{\pi_{\mathrm{mix}}}[\log w_t]\le0$, i.e.\ $c\le1$ (strict for $\alpha>0$):
 \begin{equation}
   w_i=c^{T}\xrightarrow{\,T\to\infty\,}0,\qquad
   \log c=\mathbb{E}_{\pi_{\mathrm{mix}}}[\log w_t]\;\le\;\log\mathbb{E}_{\pi_{\mathrm{mix}}}[w_t]=0 .
   \label{eq:q3-collapse}
 \end{equation}
-% TODO (b, your reasoning): the weights become degenerate -- one rollout dominates, so the effective
-% sample size collapses; one fix (clip + self-normalise) caps the variance at the cost of bias.
+So $w_i=c^{T}\to0$: almost every response gets vanishing weight, the mean held at $1$ by rare outliers.
+(b) Then one rollout dominates: the effective sample size collapses and $\hat g_{\mathrm{mix}}$ has
+runaway variance for long $T$. Clipping then self-normalising the weights keeps $K_{\mathrm{eff}}$
+bounded, at the cost of bias:
 \begin{equation}
   K_{\mathrm{eff}}=\frac{\bigl(\sum_i w_i\bigr)^2}{\sum_i w_i^2}\xrightarrow{\,T\to\infty\,}1,
   \qquad
