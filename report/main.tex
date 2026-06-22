@@ -78,7 +78,7 @@
   \textbf{W\&B project} &
     \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo}{\texttt{a8-grpo}}
     --- baseline run \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/bdbugenj}{\texttt{bdbugenj}};
-    variants R0, R1, R2, R4 (linked in Sec.~\ref{sec:improve}) \\
+    variants R0, R1, R2, R4, R5, R3b (linked in Sec.~\ref{sec:improve}) \\
   \textbf{Baseline code} &
     \texttt{tpu-2026} @ commit
     \href{https://github.com/borisbolliet/tpu-2026/tree/324abbe4b4e229ea812223856393547db4fbb53e}{\texttt{324abbe}},
@@ -94,9 +94,10 @@
 \begin{minipage}{0.86\textwidth}
   \small
   \textbf{Jointly-owned experiments (I.1--I.3).} The GRPO training runs (baseline
-  \texttt{bdbugenj}; R0, R1, R2, R4 per the team plan) and their checkpoint
-  evaluations are team-owned; the analysis, figures, and all prose in this report
-  are my own. Section~I.4 (theory) and Part~II are strictly individual work.
+  \texttt{bdbugenj}; R0, R1, R2, R4 and the group-size runs R5, R3b per the team
+  plan) and their checkpoint evaluations are team-owned; the analysis, figures, and
+  all prose in this report are my own. Section~I.4 (theory) and Part~II are strictly
+  individual work.
   % TODO: adjust wording if needed
 \end{minipage}
 \end{center}
@@ -294,47 +295,52 @@ sign-indefinite, and indeed ${\sim}1.5\%$ of logged steps dip below zero.
 %   - Optimisation/capacity: LoRA rank, learning rate, schedule, generation
 %     length -- trade-off in KL budget vs effective sample size.
 \paragraph{Motivation.}
-Sec.~\ref{sec:reproduce} ends in collapse; we test two theory-grounded repairs.
-\emph{(i)~The KL trust region.} In the regularised update of I.4~Q2,
-$\beta\,\mathrm{KL}(\pi_\theta\|\pi_{\mathrm{ref}})$ bounds drift and, with it, reward
-hacking \citep{schulman2015trpo,shao2024deepseekmath}. Prediction: $\beta{:}\,0.08{\to}0.3$
-(R1) preserves held-out accuracy; $\beta{=}0$ (R4, planned as a \emph{negative control},
-though DAPO advocates it) worsens the collapse. \emph{(ii)~Reward misspecification.} By
-I.2(c) the shaping terms can carry $\bar r$ without correctness; R2 adds DAPO's soft
-over-long penalty \citep[Eq.~13]{yu2025dapo} ($0$ ramping to $-1$ over $1500$--$3000$
-chars), removing the verbosity incentive without touching the correctness terms.
+Sec.~\ref{sec:reproduce} ends in reward-hacking collapse (I.2c). We target it with the
+two levers the lectures expose, laid out as a $2{\times}2$ over (group size $K$, KL weight
+$\beta$) plus two $K{=}2$ probes. \emph{(i)~Effective sample size (primary).} At $K{=}2$ the
+group-normalised advantage is degenerate-coarse --- $\hat A_i\in\{0,\pm1/\sqrt2\}$ whatever
+the margin (I.2b) --- and the estimator variance scales as $1/K_{\mathrm{eff}}$ with
+$K_{\mathrm{eff}}\!\propto\!K$ (I.4~Eq.~\eqref{eq:q1-keff}). Prediction: raising
+$K{:}\,2{\to}8$ grades the advantage and lowers gradient variance, stabilising training.
+\emph{(ii)~The KL trust region (secondary).} $\beta\,\mathrm{KL}(\pi_\theta\|\pi_{\mathrm{ref}})$
+should bound drift and, with it, reward hacking
+\citep{schulman2015trpo,shao2024deepseekmath}; we sweep $\beta\in\{0,0.08,0.3\}$ (R1 raises
+it, R4/R3b switch it off). A reward probe R2 adds DAPO's soft over-long penalty
+\citep[Eq.~13]{yu2025dapo} ($0$ ramping to $-1$ over $1500$--$3000$ chars).
 
 \paragraph{Controlled comparison.}
-One knob per run, everything else fixed (same data and \texttt{seed}{=}42, same
-$\varepsilon,K,$ LR; full $3364$ steps each --- shortening would rescale the LR
-schedule): an in-protocol baseline re-run R0, plus R1/R2/R4
-(W\&B:
+One knob per cell, all else fixed (same data, \texttt{seed}{=}42, $\varepsilon$, LR; full
+$3364$ steps each, so the comparison is matched \emph{per step} --- $K{=}8$ thus spends
+${\sim}4{\times}$ the rollouts of $K{=}2$). The $2{\times}2$ is
+R0$(K{=}2,\beta{=}.08)$/R4$(2,0)$/R5$(8,.08)$/R3b$(8,0)$, with R1$(2,.30)$ and R2$(2,$+len$)$
+as $K{=}2$ probes (W\&B:
 \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/8c2785ut}{R0},
 \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/9p3kota8}{R1},
 \href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/xt3d5b0e}{R2},
-\href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/082vyug5}{R4}).
-Every model is scored on the \emph{same} held-out split ($N{=}64$ GSM8K-test prompts,
-greedy; this pipeline materialises the seed-42 split from HF rather than TFDS, so base
-differs from Table~\ref{tab:baseline-acc}: $45.3$ vs $51.6$, CIs overlapping ---
-within-table comparisons are like-for-like) at two checkpoints under one rule:
-\emph{final} (step 3364) and \emph{best-val} (checkpoint nearest the arg-max of held-out
-reward; checkpoints every 100 steps). Uncertainty: bootstrap $95\%$ CIs over prompts.
+\href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo/runs/082vyug5}{R4},
+\href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo}{R5},
+\href{https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo}{R3b}). % TODO: pin exact R5/R3b run URLs
+Models are scored on the \emph{full} GSM8K test split ($n{=}1319$, greedy; seed-42 split from
+HF, so base reads $47.4$ vs $51.6$ on the I.1 TFDS-$64$ subset --- within-table comparisons
+are like-for-like), at \emph{final} (step 3364) and \emph{best-val} (arg-max held-out reward,
+every 100 steps). Uncertainty: bootstrap $95\%$ CIs over the $1319$ prompts.
 
 \begin{table}[h]
   \centering
-  \caption{Held-out GSM8K exact-match (\%, $N{=}64$, greedy, bootstrap $95\%$ CI) at the
-  best-val and final checkpoints, and format accuracy at final.}
+  \caption{Held-out GSM8K exact-match (\%, full test split $n{=}1319$, greedy, bootstrap
+  $95\%$ CI) at best-val and final, plus format@final. Rows trace the $(K,\beta)$ $2{\times}2$;
+  R3b's final CI is \emph{disjoint} from base. R1/R2 were scored at $N{=}64$ only (text).}
   \label{tab:improve-acc}
   \small
   \begin{tabular}{llccc}
     \toprule
-    Run & Change & Best-val \% (step) & Final \% & Format@final \% \\
+    Run & $(K,\beta)$ & Best-val \% (step) & Final \% & Format@final \% \\
     \midrule
-    Base \texttt{gemma-3-1b-it} & ---                & ---                   & 45.3 [32.8, 57.8] & 1.6 \\
-    R0 (baseline)               & default, $\beta{=}0.08$ & 42.2 [29.7, 54.7] (700)  & 0.0 \phantom{0}[0.0, 0.0]\phantom{0} & 7.8 \\
-    R1                          & $\beta{=}0.3$      & 43.8 [31.2, 56.2] (600)  & 0.0 \phantom{0}[0.0, 0.0]\phantom{0} & 0.0 \\
-    R2                          & $+$ length penalty & 25.0 [15.6, 35.9] (400)  & 39.1 [28.1, 51.6] & 79.7 \\
-    R4                          & $\beta{=}0$        & \textbf{51.6} [39.1, 64.1] (1300) & \textbf{46.9} [34.4, 59.4] & \textbf{96.9} \\
+    Base \texttt{gemma-3-1b-it} & ---          & ---                          & 47.4 [44.7, 50.0] & 4.0 \\
+    R0 (baseline)               & $(2,\,0.08)$ & 46.7 [44.0, 49.4] (700)      & \phantom{0}6.2 [4.9, 7.5]\phantom{0} & 11.8 \\
+    R4                          & $(2,\,0)$    & 52.8 [50.1, 55.5] (1300)     & 48.6 [45.9, 51.3] & \textbf{96.0} \\
+    R5                          & $(8,\,0.08)$ & 53.5 [50.7, 56.2] (1300)     & 55.6 [52.8, 58.2] & 91.3 \\
+    R3b                         & $(8,\,0)$    & \textbf{55.6} [53.0, 58.2] (1000) & \textbf{57.2} [54.6, 59.9] & 93.4 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -343,41 +349,42 @@ reward; checkpoints every 100 steps). Uncertainty: bootstrap $95\%$ CIs over pro
   \centering
   \includegraphics[width=0.41\textwidth]{i3_reward.pdf}\hfill
   \includegraphics[width=0.41\textwidth]{i3_kl.pdf}
-  \caption{All runs, shared axes ($100$-step means; dots = best-val checkpoints). Left:
-  reward --- R4 alone does not decay; R1 falls to $-2.5$, the approximate-format
-  \emph{floor}. Right: KL --- R1 drifts \emph{most} (spikes to $33$) despite the largest
-  $\beta$.}
+  \caption{Shared axes ($100$-step means; $K{=}2$ dashed, $K{=}8$ solid; dots = best-val).
+  Left: reward $(K,\beta)$ $2{\times}2$ --- only the $K{=}2,\beta{=}.08$ baseline (R0)
+  collapses. Right: KL of the $\beta{>}0$ runs --- at matched $\beta$, $K{=}8$ (R5) pins
+  $\mathrm{KL}{\approx}0.2$ vs $K{=}2$'s drift; $\beta{=}0.3$ (R1) drifts \emph{most} (inset,
+  peak ${\approx}33$).}
   \label{fig:improve-curves}
 \end{figure}
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.82\textwidth]{i3_decomp.pdf}
-  \caption{Diagnostic (reward hacking): per-term decomposition. In R0 the format terms
-  sit near their maxima while \texttt{check\_answer} never exceeds ${\sim}1.2$ and ends
-  \emph{negative} ($-0.38$: parsed but wrong) --- shaping, not correctness, carries
-  $\bar r$; in R4 every term stays healthy.}
+  \caption{Diagnostic (reward hacking): per-term reward decomposition. $K{=}2$ baseline
+  R0 (left): \texttt{check\_answer} ends \emph{negative} ($-0.38$: parsed but wrong) while
+  the format terms decay --- shaping, not correctness, carries $\bar r$. $K{=}8$ R3b
+  (right): every term stays healthy (\texttt{check\_answer}~${\approx}1.4$).}
   \label{fig:diagnostic}
 \end{figure}
 
 \paragraph{Discussion.}
-Both $\beta$ predictions were contradicted. Tripling $\beta$ did not protect accuracy:
-R1 collapsed \emph{harder} (to the shaping floor: ${\sim}112$-token completions with no
-template tags) and drifted \emph{more} (Fig.~\ref{fig:improve-curves}, right). With the
-misspecified reward of I.2(c) the leash has nothing good to pull towards, and the naive
-sign-indefinite KL estimator (I.2(d)) means a large $\beta$ amplifies gradient noise once
-drift grows. Conversely the $\beta{=}0$ ``negative control'' won (as DAPO argues
-\citep{yu2025dapo}): format $1.6\%{\to}96.9\%$ at base-parity exact-match ($46.9$/$51.6$
-vs.\ $45.3$; CIs overlap at $N{=}64$, so we claim parity, not improvement). The effective
-stabiliser is the \emph{implicit} trust region already present --- rank-$64$ adapters, LR
-$3{\times}10^{-6}$, grad clip $0.1$ (cf.\ I.2(a)). On the reward axis, R2's final
-checkpoint alone stays healthy ($39.1\%$), consistent with the misspecification
-diagnosis; but the penalty only clipped the verbose tail (active on $29\%$ of steps,
-mean $-0.07$), and one seed cannot exclude run-to-run variance (R0 vs I.1-run KL peaks:
-$4.3$ vs $41$ at identical config --- collapse systematic, severity stochastic). Finally,
-a selection artifact: R2's best-\emph{val} checkpoint ($400$, $25.0\%$) is far worse than
-its final --- validation \emph{shaped} reward is itself hackable; select by a
-correctness-only signal instead.
+\emph{Group size is the lever.} At matched $\beta{=}0.08$, raising $K{:}\,2{\to}8$ turns
+collapse into a win --- R0 craters to $6.2\%$ while R5 holds $55.6\%$; at $\beta{=}0$ it lifts
+R4's $48.6\%$ to R3b's $\mathbf{57.2\%}$, whose CI $[54.6,59.9]$ is \emph{disjoint} from base
+$[44.7,50.0]$: a real $+9.8$-pt gain, not the parity a $K{=}2$/$N{=}64$ read would suggest.
+\emph{Mechanism (theory).} The logged within-group advantage std is $0.935{=}\sqrt{(K{-}1)/K}$
+at $K{=}8$ (Eq.~\eqref{eq:q1-vara}; vs $1/\sqrt2$ at $K{=}2$, I.2b), so the group is graded over
+$8$ ranks not $3$ values and $K_{\mathrm{eff}}$ quadruples (Eq.~\eqref{eq:q1-keff}); the
+lower-variance gradient shows in KL (at matched $\beta$, $K{=}8$ pins $\mathrm{KL}{\approx}0.2$
+vs $K{=}2$'s drift past $4$, Fig.~\ref{fig:improve-curves}) and in the decomposition
+(\texttt{check\_answer} $+1.4$ at $K{=}8$ vs $-0.38$ at $K{=}2$, Fig.~\ref{fig:diagnostic}):
+correctness is no longer traded for shaping. \emph{$\beta$ --- honest negatives.} The KL-leash
+prediction was contradicted: at $K{=}2$, \emph{more} leash drifted \emph{more}, R1$(\beta{=}0.3)$
+collapsing hardest (reward $-2.5$, KL${\to}33$) --- with a misspecified reward (I.2c) and the
+sign-indefinite KL estimator (I.2d) a large $\beta$ only amplifies gradient noise. Once $K{=}8$,
+$\beta$ barely matters (R5${\approx}$R3b). \emph{Caveat:} one seed per cell, and the gain costs
+${\sim}4{\times}$ rollout compute --- the $K_{\mathrm{eff}}$/compute trade-off of
+Eq.~\eqref{eq:q1-keff}.
 
 % ============================================================================
 %  I.4  GRPO THEORY -- written questions (40 marks)
@@ -516,6 +523,13 @@ $K_{\mathrm{eff}}\to\infty$ which is degeneracy since identical rollouts carry
 \emph{no} gradient signal; this is the same vanishing-update failure as an all-equal-reward group in
 I.2(c).
 
+\smallskip\noindent\textbf{Empirical check (Sec.~\ref{sec:improve}).} The $K$-sweep there
+bears this out: the logged within-group advantage std equals $\sqrt{(K{-}1)/K}$ exactly
+($0.935$ at $K{=}8$ vs $1/\sqrt2{\approx}0.707$ at $K{=}2$), confirming
+$\mathrm{Var}(\hat A_i)=\tfrac{K-1}{K}$ from Eq.~\eqref{eq:q1-vara}, and raising $K{:}\,2{\to}8$
+(larger $K_{\mathrm{eff}}$) is what converts the baseline's reward-hacking collapse into a
+held-out improvement (Table~\ref{tab:improve-acc}).
+
 % ---- Q2 -------------------------------------------------------------------
 \newpage
 \subsection{KL-regularised policy improvement and the clipped surrogate}
@@ -643,20 +657,91 @@ Consider instead the mixture proposal
 with $\pi_{\mathrm{unif}}$ uniform over responses.
 
 \paragraph{(i) Importance-corrected estimator $\hat g_{\mathrm{mix}}$. \hfill\textnormal{[3]}}
-\textit{TODO: derive $\hat g_{\mathrm{mix}}$ using samples from $\pi_{\mathrm{mix}}$ and give the explicit importance weight $w_i=\pi_{\mathrm{old}}(a_i\mid q)/\pi_{\mathrm{mix}}(a_i\mid q)$.}
+We start from the standard policy gradient, in which the expectation is over the old policy $\pi_{\mathrm{old}}$;
+then we importance-sample from the mixture $\pi_{\mathrm{mix}}$ to get an unbiased estimator
+\begin{equation}
+\begin{aligned}
+  g&=\mathbb{E}_{a\sim\pi_{\mathrm{old}}}\!\bigl[\nabla_\theta\log\pi_\theta(a\mid q)\,\hat A\bigr]\\
+   &=\mathbb{E}_{a\sim\pi_{\mathrm{mix}}}\!\Bigl[\tfrac{\pi_{\mathrm{old}}(a\mid q)}{\pi_{\mathrm{mix}}(a\mid q)}\,\nabla_\theta\log\pi_\theta(a\mid q)\,\hat A\Bigr].
+\end{aligned}
+\label{eq:q3-is}
+\end{equation}
+The Monte-Carlo estimate of \eqref{eq:q3-is} with $K$ draws from $\pi_{\mathrm{mix}}$ gives
+\begin{equation}
+  \hat g_{\mathrm{mix}}=\frac1K\sum_{i=1}^K w_i\,\nabla_\theta\log\pi_\theta(a_i\mid q)\,\hat A_i,
+  \qquad a_i\sim\pi_{\mathrm{mix}},
+  \label{eq:q3-gmix}
+\end{equation}
+The explicit weight, by substituting the expression from \eqref{eq:q3-mix} to \eqref{eq:q3-is} is as below 
+\begin{equation}
+  w_i=\frac{\pi_{\mathrm{old}}(a_i\mid q)}{\pi_{\mathrm{mix}}(a_i\mid q)}
+     =\frac{\pi_{\mathrm{old}}(a_i\mid q)}{(1-\alpha)\,\pi_{\mathrm{old}}(a_i\mid q)+\alpha\,\pi_{\mathrm{unif}}(a_i\mid q)}.
+  \label{eq:q3-wi}
+\end{equation}
 
 \paragraph{(ii) Limit $\alpha\to0$. \hfill\textnormal{[1]}}
-\textit{TODO: verify $\hat g_{\mathrm{mix}}\to\hat g_{\mathrm{GRPO}}$ for the same realised actions as $\alpha\to0$.}
+% TODO (your reasoning): as $\alpha\to0$ the proposal, hence the weight, reduces to GRPO.
+\begin{equation}
+  \alpha\to0:\quad \pi_{\mathrm{mix}}\to\pi_{\mathrm{old}}\ \Longrightarrow\ w_i\to1
+  \ \Longrightarrow\ \hat g_{\mathrm{mix}}\to\hat g_{\mathrm{GRPO}}.
+  \label{eq:q3-limit}
+\end{equation}
 
 \paragraph{(iii) The shifted group mean. \hfill\textnormal{[1+2]}}
-\textit{TODO (a): express $V^{\pi_{\mathrm{mix}}}(q)$ in terms of $V^{\pi_{\mathrm{old}}}(q)$ and $V^{\pi_{\mathrm{unif}}}(q)$. TODO (b): determine whether the weights $w_i$ alone correct for the baseline shift, and derive the reweighted advantage that keeps $\hat g_{\mathrm{mix}}$ unbiased for the policy gradient under $\pi_{\mathrm{old}}$.}
+% TODO (a, your reasoning): linearity of the mixture.
+\begin{equation}
+  V^{\pi_{\mathrm{mix}}}(q)=(1-\alpha)\,V^{\pi_{\mathrm{old}}}(q)+\alpha\,V^{\pi_{\mathrm{unif}}}(q).
+  \label{eq:q3-vmix}
+\end{equation}
+% TODO (b, your reasoning): the weights fix the SCORE term but not the baseline -- the plain group
+% mean of mixture samples estimates the shifted $V^{\pi_{\mathrm{mix}}}$, so $w_i$ alone are not enough.
+\begin{equation}
+  \mathbb{E}_{\pi_{\mathrm{mix}}}[\bar r]=V^{\pi_{\mathrm{mix}}}(q)\neq V^{\pi_{\mathrm{old}}}(q),
+  \qquad
+  \bar r_w=\frac{\sum_{j} w_j\,r_j}{\sum_{j} w_j}\ \longrightarrow\ V^{\pi_{\mathrm{old}}}(q).
+  \label{eq:q3-baseline}
+\end{equation}
+% TODO (b): the reweighted advantage that restores unbiasedness (use $\bar r_w$ as the baseline).
+\begin{equation}
+  \tilde A_i=\frac{r_i-\bar r_w}{\sigma_r}.
+  \label{eq:q3-Atilde}
+\end{equation}
 
 \paragraph{(iv) Variance comparison. \hfill\textnormal{[4]}}
-\textit{TODO: compare $\mathrm{Var}(\hat g_{\mathrm{mix}})$ with $\mathrm{Var}(\hat g_{\mathrm{GRPO}})$ at fixed $K$; give one condition on $R$ under which mixing \emph{increases} the variance and a different one under which it \emph{decreases} it, with a brief argument for each.}
+% TODO (your reasoning): both are unbiased for the same $g$ (with $\tilde A$), so compare second
+% moments; write $s=\nabla_\theta\log\pi_\theta(a\mid q)\,\hat A$ for the per-sample summand.
+\begin{equation}
+  \mathrm{Var}(\hat g_{\mathrm{GRPO}})=\tfrac1K\mathrm{Var}_{\pi_{\mathrm{old}}}[s],\qquad
+  \mathrm{Var}(\hat g_{\mathrm{mix}})=\tfrac1K\mathrm{Var}_{\pi_{\mathrm{mix}}}[w\,s].
+  \label{eq:q3-var}
+\end{equation}
+% TODO (your reasoning): the only change is $w$ inside the second moment -- variance INCREASES if the
+% reward/advantage mass sits where $\pi_{\mathrm{old}}$ is large ($w>1$), DECREASES if it sits where
+% $\pi_{\mathrm{old}}$ is small ($w<1$, i.e. the uniform part improves coverage of the integrand).
+\begin{equation}
+  \mathbb{E}_{\pi_{\mathrm{mix}}}\!\bigl[w^2 s^2\bigr]=\mathbb{E}_{\pi_{\mathrm{old}}}\!\bigl[w\,s^2\bigr],
+  \qquad
+  w=\frac{1}{(1-\alpha)+\alpha\,\pi_{\mathrm{unif}}/\pi_{\mathrm{old}}}\ \gtrless\ 1 .
+  \label{eq:q3-var2}
+\end{equation}
 
 \paragraph{(v) Weight collapse for long responses. \hfill\textnormal{[2+2]}}
 Assume the per-token ratio $\pi_{\mathrm{old}}(a_{i,t}\mid q,a_{i,<t})/\pi_{\mathrm{mix}}(a_{i,t}\mid q,a_{i,<t})=c$ is constant, so the full-response weight is $w_i=c^{T}$ for $T$ tokens.
-\textit{TODO (a): describe $w_i$ as $T\to\infty$ and explain in one sentence why $c<1$ is typical when $\alpha>0$. TODO (b): explain why this ``weight collapse'' makes $\hat g_{\mathrm{mix}}$ unreliable for long responses, and propose one concrete fix (to $\pi_{\mathrm{mix}}$ or the weighting) stating what it trades off.}
+% TODO (a, your reasoning): Jensen on the per-token log-weight gives $c<1$ (strict for $\alpha>0$),
+% so the full-response weight vanishes.
+\begin{equation}
+  w_i=c^{T}\xrightarrow{\,T\to\infty\,}0,\qquad
+  \log c=\mathbb{E}_{\pi_{\mathrm{mix}}}[\log w_t]\;\le\;\log\mathbb{E}_{\pi_{\mathrm{mix}}}[w_t]=0 .
+  \label{eq:q3-collapse}
+\end{equation}
+% TODO (b, your reasoning): the weights become degenerate -- one rollout dominates, so the effective
+% sample size collapses; one fix (clip + self-normalise) caps the variance at the cost of bias.
+\begin{equation}
+  K_{\mathrm{eff}}=\frac{\bigl(\sum_i w_i\bigr)^2}{\sum_i w_i^2}\xrightarrow{\,T\to\infty\,}1,
+  \qquad
+  \tilde w_i=\frac{\min(w_i,\tau)}{\sum_j \min(w_j,\tau)} .
+  \label{eq:q3-ess}
+\end{equation}
 
 % ============================================================================
 %  PART II -- ADAPTIVE PLANNING IN cmbagent_lg (individual, 30 marks)
