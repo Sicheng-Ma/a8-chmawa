@@ -818,26 +818,25 @@ backstop.
 % ---- II.2 ------------------------------------------------------------------
 \subsection*{II.2\quad Problems (9 marks)}
 \label{sec:partii-problems}
-The two graphs are individually sound; the weaknesses are in how they compose into a closed loop.
+The two graphs are individually sound; the weaknesses are in how they compose into a closed loop, specifically:
 
-\textbf{(P1) On failure the loop halts instead of re-planning --- it is closed-loop only on \emph{success}.}
+\textbf{(P1) On failure the loop halts instead of re-planning, it is closed-loop only on \emph{success}.}
 \texttt{route\_after\_review} (\texttt{adaptive\_planning/nodes.py}) tests whether the last
 \texttt{step\_outcomes} entry is \texttt{fulfilled} \emph{before} it ever consults
 \texttt{needs\_adaptation}: a non-fulfilled step is routed straight to \texttt{END}. The adaptive branch
-therefore fires only when a step \emph{succeeds}, whereas the situation in which re-planning is most
-valuable --- a failed step that invalidates the rest of the plan --- aborts the run. This inverts the basic
+therefore fires only when a step \emph{succeeds}, whereas a failed step that invalidates the rest of the plan 
+aborts the run. This inverts the basic
 closed-loop principle that a controller should react most strongly to \emph{adverse} feedback, and leaves
-the ``adaptive'' planner brittle exactly where a static plan would also fail.
+the ``adaptive'' planner brittle where a static plan would also fail.
 
-\textbf{(P2) No bound on the number of adaptations or the plan length --- termination is not guaranteed.}
+\textbf{(P2) No bound on the number of adaptations or the plan length, termination is not guaranteed.}
 Unlike the planning loop (\texttt{num\_rounds}) or \texttt{self\_debug} (\texttt{max\_n\_attempts}), the
 adaptive loop carries \emph{no} counter. \texttt{replan\_tail} may return a tail \emph{longer} than the one
 it replaces, and \texttt{adaptive\_history} is recorded but never read back to suppress a repeated
 recommendation. Progress rests solely on \texttt{step\_index} eventually exceeding $|\texttt{plan}|$; but if
 the reviewer keeps growing the tail, that target recedes each round, so the loop can oscillate
-(re-proposing near-identical steps) or run away --- caught only by LangGraph's default
-\texttt{recursion\_limit}, which \emph{raises} rather than degrading gracefully. This is the classic
-non-termination/oscillation failure of an unbounded closed loop.
+(re-proposing near-identical steps) or run away, caught only by LangGraph's default
+\texttt{recursion\_limit}, which \emph{raises} rather than degrading.
 
 \textbf{(P3) The adapt decision is made on impoverished, inconsistent observations.}
 \texttt{adaptive\_review} sees only the \emph{last} step's free-text summary and its outcome dict, plus the
@@ -856,9 +855,11 @@ single parse failure crashes the run.
 \subsection*{II.3\quad Proposed improvements (9 marks)}
 \label{sec:partii-improvements}
 \textbf{(I1, for P1) Treat failure as a trigger, not a halt: bounded recovery re-plan.}
-Change \texttt{route\_after\_review} so that a non-fulfilled step routes to a recovery call of
-\texttt{replan\_tail} --- seeded with the failed step's \texttt{reason} so the planner can route
-around it --- guarded by a new \texttt{max\_recoveries} budget after which it still aborts. This restores
+Modify \texttt{route\_after\_review} so that when a step is not fulfilled, it is redirected to a recovery 
+invocation of \texttt{replan\_tail}. Initialize this recovery path with the failed step’s \texttt{reason} 
+to enable the planner to adapt its strategy and bypass the issue. The recovery process should be constrained 
+by a new \texttt{max\_recoveries} limit, after which execution aborts if no successful resolution is achieved. 
+This restores
 closed-loop behaviour on adverse feedback (the plan can repair itself) instead of discarding all completed
 work; it costs extra LLM calls and latency, and risks thrashing on a genuinely impossible step, which the
 budget bounds.
@@ -872,9 +873,9 @@ oscillation mode. The trade-off is that a useful late adaptation can be cut off 
 cap should be configurable rather than hard-coded.
 
 \textbf{(I3, for P3) Widen and align the observation, and close the hand-off.}
-Give \texttt{adaptive\_review} the same context \texttt{replan\_tail} already receives --- the rolling list
+Give \texttt{adaptive\_review} the same context \texttt{replan\_tail} receives: the rolling list
 of \emph{all} completed-step summaries together with the structured \texttt{step\_outcomes} (and, where
-cheap, key artifacts) --- so the decision is as informed as the action. Make \texttt{recommendations} a
+cheap, key artifacts), so the decision is as informed as the action. Make \texttt{recommendations} a
 typed, itemised contract that \texttt{merge\_plan} checks the new tail against, so a reviewer request cannot
 be silently ignored. This costs larger prompts (more tokens and latency) and a little extra plumbing, but
 directly removes the blind-spot and the coupling gap behind P3.
