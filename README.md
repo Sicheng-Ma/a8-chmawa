@@ -8,13 +8,16 @@ Part I of the Cambridge *Multi-Agent Systems & Agentic AI* practical: GRPO LoRA 
 
 | Path | What |
 | --- | --- |
-| `report/` | **the deliverable**: `report_part1.pdf` + its self-contained LaTeX source |
-| `tpu-2026/` + `tpu-2026_our_changes.patch` | training code (detached upstream clone) + our changes as a single diff |
-| `analysis/` | figure & CI tooling (`plot_report.py`, `paired_ci.py`, `export_wandb.py`) — run from the repo root |
-| `training_logs/` | per-run W&B scalar exports (`tb_scalars_R0..R5.csv`) — sources for the training curves |
-| `figures/`, `evals/` | report figures (F1–F4, S1–S3) · per-checkpoint eval dumps (n=64 and n=1319) |
-| `scripts/` | TPU-VM orchestration (full-n eval sweep · checkpoint pull) |
-| `vm_snapshot/`, `ckpts_archive/` | VM code/log archive · checkpoint manifest (the 46 GB of checkpoints are local-only) |
+| `report/` | **the deliverable**: `main.tex` (Parts I.1–I.4 + II) → `build/main.pdf`, `references.bib`, and `figures/` |
+| `scripts/` | training & eval code (`config`, `data`, `rewards`, `model`, `train`, `evaluate`, `chat`) and the plotting scripts (`make_curves.py`, `make_i3_figs.py`) |
+| `logs/i3_runs/` | per-run W&B scalar exports (`tb_scalars_R0..R5.csv`), per-run `launch_R*.sh`, and `evals/` (per-checkpoint eval dumps, n=64 and n=1319) |
+| `analysis/` | `paired_ci.py` (paired bootstrap 95% CIs behind the I.3 results table), `export_wandb.py` (W&B → CSV export) — run from the repo root |
+| `tpu-2026_our_changes.patch` | our changes to the upstream baseline as a single diff |
+| `ckpts_archive/MANIFEST.md` | checkpoint manifest (the 46 GB of LoRA checkpoints are local-only) |
+| `docs/` | `coursework.pdf` (assignment spec) |
+| `i3_runs_plan.md` · `i3_results.md` · `DEVLOG.md` | experiment plan · results summary · development log |
+| `tunix.ipynb` | the upstream baseline notebook the `scripts/` were decomposed from |
+| `bootstrap.sh` · `create_tpu_env.sh` · `tpu-setup.md` · `requirements.txt` | TPU-VM environment setup |
 
 ## Links
 

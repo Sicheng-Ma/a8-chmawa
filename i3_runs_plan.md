@@ -2,8 +2,10 @@
 
 - Team **chmawa** (sm3035, bc654, zw499); all runs shared/jointly-owned, prose individual.
 - Chip: one **v6e-1** ⇒ runs are **serial**; window closes **Mon 15 Jun 2026**.
-- Full run ≈ 4 h 45 m; chip runs unattended ⇒ **~100 h left in window ≫ 5 full runs** (~25–40 h incl. R3). No compute shortcut needed.
+- Full run ≈ 4 h 45 m; chip runs unattended ⇒ **~100 h left in window ≫ 5 full runs** (~25–40 h incl. the heavier G=8 R3b). No compute shortcut needed.
 - Refs: **GRPO** [arXiv:2402.03300] · **DAPO** [arXiv:2503.14476] · **N+ RLHF-PPO impl.** Huang et al. [OpenReview kHO2ZTa8e3].
+
+**Status (2026-06-13):** R0/R1/R2/R4 complete + diagnosed — **R4 (β=0) won** (only checkpoint to beat base, no collapse; full analysis in `i3_results.md`). **R3b** (G=8, grpo, β=0) running. **R3a** (G=8 + RLOO) prepped but parked. Firm-up (larger-n eval / 2nd seed) on hold.
 
 ## Decisions
 - **Breadth**: 3 distinct modification axes (KL · reward · advantage), not depth-on-one.
@@ -18,12 +20,13 @@
 | **R0** | — | re-run default `config.py` + final ckpt/instrumentation | controlled reference; recover ~step-450 peak | GRPO |
 | **R1** | KL | `BETA 0.08 → 0.3` | tighter leash ⇒ less drift/hacking, more held-out acc | trust region · I.4 Q2 |
 | **R2** | reward | `rewards.py` + soft length penalty (DAPO Eq 13) | kill length blow-up + verbosity-hacking | DAPO §3.4 · I.3 |
-| **R3** | advantage | `NUM_GENERATIONS 2 → 8` + leave-one-out (compute-normalised) | lower-variance Â, fewer dead groups, stabler | RLOO · I.4 Q1, I.2(b) |
-| **R4** *(opt. 5th)* | KL | `BETA → 0` (KL off) | predicted **worse** drift — negative result | DAPO §2.3 · I.2/I.3(d) |
+| **R4** | KL | `BETA → 0` (KL OFF) | predicted worse drift — **was the winner**: only run to beat base, no collapse | DAPO §2.3 · I.2/I.3(d) |
+| **R3b** | advantage | `NUM_GENERATIONS 2 → 8`, grpo, **β=0**, full 3364 steps | isolate **group size G** vs R4 (G=2); G=8 Â-distribution / σ_r | I.4 Q1, I.2(b) |
+| **R3a** *(prepped, not run)* | advantage | G=8 + **RLOO** (leave-one-out, no std), β=0 | isolate **estimator** vs R3b | RLOO · I.4 Q1 |
 
 - **β-sweep** falls out free: R4/R0/R1 = β ∈ {0, 0.08, 0.3} → clean KL-drift story for I.3(d).
-- R3 doubles as source for the Â-distribution / σ_r / degenerate-frac diagnostic (G=2 gives only ±1).
-- Controlled: same data · seed 42 · eval split · **full 3364 steps**; only the one axis knob changes per run (leave `NUM_BATCHES/EPOCHS/FRACTION/ITERATIONS` at defaults). R3: same steps = **per-step-normalised** (G=8 = more rollout cost, same #updates); same-compute fallback = fewer steps, reported per-step.
+- R3b is the source for the Â-distribution / σ_r / degenerate-frac diagnostic (G=2 gives only ±1; G=8 gives a real distribution).
+- Controlled: same data · seed 42 (rollout RNG = `PRNGKey(0)` for all runs) · eval split · **full 3364 steps**; only the one axis knob changes per run. **R3b vs R4 isolates G** (per-step-normalised: G=8 = more rollout cost, same #updates); **R3a vs R3b would isolate the estimator**.
 - R4 alternatives if swapped: binary ±1 reward (DAPO §2.4) or LoRA-rank change.
 
 ---
@@ -76,11 +79,11 @@
 ## Instrumentation TODO
 - `rewards.py`: soft length-penalty term (R2).
 - train metrics (✚): entropy, within-group σ_r + Â stats, length-by-correctness.
-- `config.py`: R3 leave-one-out flag (verify Tunix exposes it; else patch advantage calc).
+- ✓ `train.py`: RLOO estimator registered (`register_advantage_estimator("rloo")`) + `ADVANTAGE_ESTIMATOR` knob (selected by R3a; R3b uses grpo).
 - `evaluate.py`: per-example correctness dump → offline bootstrap CI.
 - plotting: W&B export / overlay script over all `tb_scalars_*.csv`.
 
 ## Owners (serial chip)
 - A: R0 + R1 + overlay/export script (F1).
 - B: R2 + length term + reward-decomposition plot (S1).
-- C: R3 + R4 + σ_r/entropy instrumentation (S2/S3) + `evaluate.py` bootstrap CI (F2).
+- C: R4 + R3b + σ_r/Â instrumentation (S2/S3) + `evaluate.py` bootstrap CI (F2).
