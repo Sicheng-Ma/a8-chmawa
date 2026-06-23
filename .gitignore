@@ -65,3 +65,6 @@ report/build/*
 
 # backup from GCP
 chmawa_backup/
+
+# Part II repo
+cmbagent_lg/

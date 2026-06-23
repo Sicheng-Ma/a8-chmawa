@@ -1,0 +1,60 @@
+// Adaptive-planning workflow of cmbagent_lg (adaptive-planning branch, commit d7d0592).
+// Auto-laid-out with Graphviz:  dot -Tpdf cmbagent_workflow.dot -o cmbagent_workflow.pdf
+digraph adaptive_planning {
+  rankdir=TB;
+  graph [fontname="Helvetica", fontsize=11, nodesep=0.25, ranksep=0.45, splines=true, compound=true];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#eef3ff", color="#5b6b8c", penwidth=1.1, margin="0.12,0.06"];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555", arrowsize=0.8];
+
+  start [label="START", shape=oval, fillcolor="#e9e9e9", color="#666"];
+  end   [label="END",   shape=oval, fillcolor="#e9e9e9", color="#666"];
+  plan  [label="Plan", fillcolor="#dff3df", color="#3a8a3a", penwidth=1.3];
+  subg  [label="self_debug / researcher\n(per-step sub-graphs)",
+         style="rounded,dashed,filled", fillcolor="#f4f4f4", color="#888"];
+
+  subgraph cluster_A {
+    labeljust=l; fontname="Helvetica"; color="#3b5bd0"; style="rounded"; bgcolor="#f7f9ff"; penwidth=1.2;
+    label=<<b>A&nbsp;&nbsp;Initial planning</b> &nbsp;(planning/) &nbsp;<font point-size="9" color="#7a7a7a">[state: PlanState]</font>>;
+    planner       [label="planner"];
+    format_plan   [label="format_plan"];
+    r1            [label="round &#8804;\nnum_rounds?", shape=diamond, fillcolor="#ffe7c2", color="#c98a2b"];
+    plan_reviewer [label="plan_reviewer"];
+    format_review [label="format_review"];
+  }
+
+  subgraph cluster_B {
+    labeljust=l; fontname="Helvetica"; color="#d0892b"; style="rounded"; bgcolor="#fffaf2"; penwidth=1.2;
+    label=<<b>B&nbsp;&nbsp;Adaptive execution</b> &nbsp;(adaptive_planning/) &nbsp;<font point-size="9" color="#7a7a7a">[state: AdaptivePlanState]</font>>;
+    execute_step    [label="execute_step\n(deep_research run_step)"];
+    adaptive_review [label="adaptive_review"];
+    r2              [label="route_after\n_review", shape=diamond, fillcolor="#ffe7c2", color="#c98a2b"];
+    replan_tail     [label="replan_tail"];
+    merge_plan      [label="merge_plan"];
+    r3              [label="route_after\n_merge", shape=diamond, fillcolor="#ffe7c2", color="#c98a2b"];
+  }
+
+  // Phase A: propose--critique loop
+  start -> planner;
+  planner -> format_plan;
+  format_plan -> r1;
+  r1 -> plan_reviewer [label="yes"];
+  plan_reviewer -> format_review;
+  format_review -> planner [label="revise (×num_rounds)", color="#3b5bd0", fontcolor="#3b5bd0", constraint=false];
+  r1 -> plan [label="no (final pass)"];
+
+  // Bridge: the planning graph hands its Plan to the execution graph
+  plan -> execute_step [label="initial plan"];
+
+  // Phase B: step-by-step execution with tail re-planning
+  execute_step -> adaptive_review;
+  execute_step -> subg [label="invokes", style=dashed];
+  adaptive_review -> r2;
+  r2 -> replan_tail [label="needs_adaptation"];
+  replan_tail -> merge_plan;
+  merge_plan -> r3;
+  r2 -> execute_step [label="else: next step", color="#3b5bd0", fontcolor="#3b5bd0", constraint=false];
+  r3 -> execute_step [label="next step", color="#3b5bd0", fontcolor="#3b5bd0", constraint=false];
+  r2 -> end [label="fail / done"];
+  r3 -> end [label="done"];
+}

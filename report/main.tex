@@ -29,6 +29,8 @@
 \usepackage{lmodern}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,shapes.geometric,calc}
 \usepackage{booktabs}
 \usepackage{caption}
 \captionsetup{font=small,skip=4pt}
@@ -44,6 +46,8 @@
 \usepackage{url}
 
 \graphicspath{{figures/}}
+\pdfminorversion=7                   % include graphviz-rendered PDF (v1.7) figures without warning
+\setlength{\emergencystretch}{4em}  % absorb occasional long \texttt{} tokens, avoid overfull boxes
 % Single line spacing is the LaTeX default -- do NOT add \setstretch/\doublespacing.
 
 \begin{document}
@@ -85,7 +89,7 @@
     run on a Cloud TPU \texttt{v6e-1} \\
   \textbf{Part II target} &
     \texttt{cmbagent\_lg} @
-    \href{https://github.com/borisbolliet/cmbagent_lg/tree/adaptive-planning}{\texttt{adaptive-planning}} % TODO: pin the exact commit studied
+    \href{https://github.com/borisbolliet/cmbagent_lg/commit/d7d0592}{\texttt{adaptive-planning}} (commit \texttt{d7d0592})
 \end{tabular}
 \end{center}
 
@@ -766,29 +770,114 @@ bounded, at the cost of bias:
 % ---- II.1 ------------------------------------------------------------------
 \subsection*{II.1\quad Workflow diagram (12 marks)}
 \label{sec:partii-diagram}
-% The workflow diagram does NOT count towards the 2-page limit. Produce it as a
-% LangGraph-style node/edge diagram -- either an \includegraphics figure
-% (export from a drawing tool) or a TikZ picture -- showing nodes, edges,
-% conditional routing, and the state threaded between nodes.
-\begin{figure}[h]
+
+\begin{figure}[p]
   \centering
-  % \includegraphics[width=\textwidth]{cmbagent_lg_workflow.pdf}  % TODO: export your diagram
-  \caption{Adaptive-planning workflow of \texttt{cmbagent\_lg} (\texttt{adaptive-planning} branch): LangGraph nodes (planner, plan-reviewer, control loop, adaptive-review), edges, conditional routing, and the state object threaded between nodes. \emph{TODO: replace with your diagram --- this figure does not count towards the 2-page limit.}}
+  \includegraphics[width=\textwidth]{cmbagent_workflow.pdf}
+  \caption{Adaptive-planning workflow of \texttt{cmbagent\_lg} (\texttt{adaptive-planning} branch, commit
+  \texttt{d7d0592}), composed of two LangGraph \texttt{StateGraph}s. \textbf{A}~(\texttt{planning/}): a
+  propose--critique loop \texttt{planner\,$\to$\,format\_plan\,$\to$\,plan\_reviewer\,$\to$\,format\_review},
+  repeated for \texttt{num\_rounds} cycles (router \texttt{route\_after\_format\_plan}) before the final,
+  un-reviewed pass emits the \texttt{Plan}. \textbf{B}~(\texttt{adaptive\_planning/}): the plan is executed
+  step by step --- \texttt{execute\_step} is \texttt{deep\_research}'s \texttt{run\_step}, dispatching each
+  step into the \texttt{self\_debug}/\texttt{researcher} sub-graphs --- and after every step
+  \texttt{adaptive\_review} (router \texttt{route\_after\_review}) either rewrites the remaining plan tail
+  (\texttt{replan\_tail}\,$\to$\,\texttt{merge\_plan}, router \texttt{route\_after\_merge}), advances to the
+  next step, or halts (\texttt{END}) on step failure or plan exhaustion. Blue edges are loops. The state
+  threaded through each graph (tagged in its header) is \texttt{PlanState}: \texttt{current\_plan,
+  current\_review, history, round} for~A, and \texttt{AdaptivePlanState}: \texttt{plan, step\_index,
+  step\_summaries, step\_outcomes, adaptive\_review, new\_tail, adaptive\_history} for~B. This figure does
+  not count towards the 2-page limit.}
   \label{fig:partii-workflow}
 \end{figure}
 
 \paragraph{Walkthrough.}
-\textit{TODO (at most half a page): make explicit what triggers a plan revision, what part of the plan may change, what is held fixed across a revision, and how the loop is guaranteed to terminate.}
+The workflow composes two LangGraph state machines (Fig.~\ref{fig:partii-workflow}). The
+\texttt{planning/} graph first produces a \texttt{Plan} through a propose--critique loop
+(\texttt{planner}\,$\leftrightarrow$\,\texttt{plan\_reviewer}) bounded by \texttt{num\_rounds}, \emph{before}
+any execution; the \texttt{adaptive\_planning/} graph then executes that plan one step at a time and is
+where adaptation happens.
+\emph{Trigger.} After each step, \texttt{execute\_step} records a summary and a structured outcome and
+advances \texttt{step\_index}; \texttt{adaptive\_review} then reads that latest summary/outcome together
+with the remaining steps and returns a boolean \texttt{needs\_adaptation}. When it is \texttt{True}
+(on a fulfilled step), \texttt{route\_after\_review} routes to \texttt{replan\_tail} --- the revision.
+\emph{What changes vs.\ what is fixed.} Only the not-yet-executed \emph{tail} is rewritten:
+\texttt{replan\_tail} regenerates the remaining steps from the reviewer's recommendations and
+\texttt{merge\_plan} splices \texttt{completed\_prefix} $+$ \texttt{new\_tail} back into \texttt{plan}.
+The completed prefix and its outputs are held fixed (never re-proposed or re-run), as are the task and
+the available-agent set; earlier steps are never revisited.
+\emph{Termination.} \texttt{route\_after\_review} returns \texttt{END} when the last step was \emph{not}
+fulfilled, or when the plan is exhausted (\texttt{step\_index}\,$>$\,$|\texttt{plan}|$); otherwise control
+advances to the next step, or adapts and then advances. Every non-terminal cycle ends in an
+\texttt{execute\_step} that increments \texttt{step\_index}, so the run makes monotone progress and stops
+once the (possibly rewritten) plan is consumed or a step fails. Crucially, nothing caps the number of
+adaptations or the length of the rewritten tail, so termination ultimately relies on the reviewer
+eventually setting \texttt{needs\_adaptation} to \texttt{False}, with LangGraph's recursion limit as a
+backstop.
 
 % ---- II.2 ------------------------------------------------------------------
 \subsection*{II.2\quad Problems (9 marks)}
 \label{sec:partii-problems}
-\textit{TODO: identify and \emph{argue} (not merely assert) the most significant problems, limitations, or failure modes of the implementation, each grounded in the lecture material on planning and closed-loop control (e.g.\ open- vs closed-loop, plan staleness, oscillation / non-termination, observability of execution feedback, reviewer-planner coupling).}
+The two graphs are individually sound; the weaknesses are in how they compose into a closed loop.
+
+\textbf{(P1) On failure the loop halts instead of re-planning --- it is closed-loop only on \emph{success}.}
+\texttt{route\_after\_review} (\texttt{adaptive\_planning/nodes.py}) tests whether the last
+\texttt{step\_outcomes} entry is \texttt{fulfilled} \emph{before} it ever consults
+\texttt{needs\_adaptation}: a non-fulfilled step is routed straight to \texttt{END}. The adaptive branch
+therefore fires only when a step \emph{succeeds}, whereas the situation in which re-planning is most
+valuable --- a failed step that invalidates the rest of the plan --- aborts the run. This inverts the basic
+closed-loop principle that a controller should react most strongly to \emph{adverse} feedback, and leaves
+the ``adaptive'' planner brittle exactly where a static plan would also fail.
+
+\textbf{(P2) No bound on the number of adaptations or the plan length --- termination is not guaranteed.}
+Unlike the planning loop (\texttt{num\_rounds}) or \texttt{self\_debug} (\texttt{max\_n\_attempts}), the
+adaptive loop carries \emph{no} counter. \texttt{replan\_tail} may return a tail \emph{longer} than the one
+it replaces, and \texttt{adaptive\_history} is recorded but never read back to suppress a repeated
+recommendation. Progress rests solely on \texttt{step\_index} eventually exceeding $|\texttt{plan}|$; but if
+the reviewer keeps growing the tail, that target recedes each round, so the loop can oscillate
+(re-proposing near-identical steps) or run away --- caught only by LangGraph's default
+\texttt{recursion\_limit}, which \emph{raises} rather than degrading gracefully. This is the classic
+non-termination/oscillation failure of an unbounded closed loop.
+
+\textbf{(P3) The adapt decision is made on impoverished, inconsistent observations.}
+\texttt{adaptive\_review} sees only the \emph{last} step's free-text summary and its outcome dict, plus the
+remaining steps; it never sees earlier steps, the raw artifacts, or the task rationale. The \emph{decision}
+to adapt is thus \emph{less} informed than the \emph{action} it triggers: \texttt{replan\_tail} is handed
+\emph{all} completed-step summaries. Judging whether the whole tail is still valid from one lossy,
+LLM-written summary is weak observability of execution feedback, and invites both missed adaptations (an
+issue that surfaced two steps earlier) and spurious ones.
+
+\textbf{Further, briefly.} the completed prefix is frozen, so an early mistake revealed late can never be
+undone; the reviewer$\to$planner hand-off is free-text \texttt{recommendations} with no check that the new
+tail obeyed them (reviewer--planner coupling); and the structured-output calls have no error handling, so a
+single parse failure crashes the run.
 
 % ---- II.3 ------------------------------------------------------------------
 \subsection*{II.3\quad Proposed improvements (9 marks)}
 \label{sec:partii-improvements}
-\textit{TODO: for each problem raised in II.2, propose a concrete, justified improvement --- state what it changes, why it addresses the problem, and what it trades off (extra cost, added latency, new failure modes). Each proposal must be specific enough that someone could implement it.}
+\textbf{(I1, for P1) Treat failure as a trigger, not a halt: bounded recovery re-plan.}
+Change \texttt{route\_after\_review} so that a non-fulfilled step routes to a recovery call of
+\texttt{replan\_tail} --- seeded with the failed step's \texttt{reason} so the planner can route
+around it --- guarded by a new \texttt{max\_recoveries} budget after which it still aborts. This restores
+closed-loop behaviour on adverse feedback (the plan can repair itself) instead of discarding all completed
+work; it costs extra LLM calls and latency, and risks thrashing on a genuinely impossible step, which the
+budget bounds.
+
+\textbf{(I2, for P2) Bound the loop explicitly.}
+Add a \texttt{max\_adaptations} counter to \texttt{AdaptivePlanState} or \texttt{PlanContext} (mirroring
+\texttt{num\_rounds}), reject a rewritten tail that exceeds the original length by more than a fixed slack,
+and consult \texttt{adaptive\_history} to refuse a recommendation already tried; set an explicit
+\texttt{recursion\_limit} as a hard backstop. Together these give a termination guarantee and remove the
+oscillation mode. The trade-off is that a useful late adaptation can be cut off once the cap is hit, so the
+cap should be configurable rather than hard-coded.
+
+\textbf{(I3, for P3) Widen and align the observation, and close the hand-off.}
+Give \texttt{adaptive\_review} the same context \texttt{replan\_tail} already receives --- the rolling list
+of \emph{all} completed-step summaries together with the structured \texttt{step\_outcomes} (and, where
+cheap, key artifacts) --- so the decision is as informed as the action. Make \texttt{recommendations} a
+typed, itemised contract that \texttt{merge\_plan} checks the new tail against, so a reviewer request cannot
+be silently ignored. This costs larger prompts (more tokens and latency) and a little extra plumbing, but
+directly removes the blind-spot and the coupling gap behind P3.
 
 % ============================================================================
 %  REFERENCES (do not count towards any page limit)
