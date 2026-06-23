@@ -1,0 +1,419 @@
+diff --git a/scripts/config.py b/scripts/config.py
+index 73dfd74..22aa7fc 100644
+--- a/scripts/config.py
++++ b/scripts/config.py
+@@ -41,17 +41,23 @@ TOTAL_GENERATION_STEPS = 768
+ TEMPERATURE = 0.9          # high enough that the G samples actually differ
+ TOP_P = 1.0
+ TOP_K = 50
+-NUM_GENERATIONS = 2        # G in the GRPO paper — group size for advantage norm
++NUM_GENERATIONS = int(os.environ.get("NUM_GENERATIONS", 2))  # G — group size for advantage norm (R3: 8)
+ 
+ # ====== GRPO loss ======
+ NUM_ITERATIONS = 1         # mu — PPO-style inner optimisation passes per batch
+-BETA = 0.08                # KL penalty coefficient (anchors to reference model)
+-EPSILON = 0.2              # PPO-style clip range
++BETA = float(os.environ.get("BETA", 0.08))       # KL penalty coeff (R1: 0.3, R4: 0.0)
++EPSILON = float(os.environ.get("EPSILON", 0.2))  # PPO-style clip range
++ADVANTAGE_ESTIMATOR = os.environ.get("ADVANTAGE_ESTIMATOR", "grpo")  # R3: "rloo" (leave-one-out)
++
++# ====== Reward shaping (R2: length penalty; OFF by default so R0 == baseline) ======
++LENGTH_PENALTY = os.environ.get("LENGTH_PENALTY", "0") == "1"
++LEN_SOFT_CHARS = int(os.environ.get("LEN_SOFT_CHARS", 1500))  # start penalising (char proxy)
++LEN_MAX_CHARS = int(os.environ.get("LEN_MAX_CHARS", 3000))    # full -1 (~768 tok @ ~4 ch/tok)
+ 
+ # ====== Training ======
+ TRAIN_MICRO_BATCH_SIZE = 1
+ NUM_BATCHES = 3738
+-NUM_TEST_BATCHES = 64
++NUM_TEST_BATCHES = int(os.environ.get("NUM_TEST_BATCHES", 64))  # env-overridable for large-n eval (full GSM8K test = 1319)
+ EVAL_EVERY_N_STEPS = 64
+ NUM_EPOCHS = 1
+ MAX_STEPS = int(NUM_BATCHES * NUM_ITERATIONS * TRAIN_FRACTION * NUM_EPOCHS)
+@@ -65,12 +71,15 @@ WARMUP_STEPS = 0.1 * MAX_STEPS
+ MAX_GRAD_NORM = 0.1        # tight clipping keeps KL well-behaved
+ 
+ # ====== Checkpointing ======
+-# NOTE: /tmp is volatile. For long runs, point this at persistent storage.
+-INTERMEDIATE_CKPT_DIR = "/tmp/content/intermediate_ckpt/"
+-CKPT_DIR = "/tmp/content/ckpts/"
+-TENSORBOARD_DIR = "/tmp/content/tmp/tensorboard/grpo"
+-SAVE_INTERVAL_STEPS = 500
+-MAX_TO_KEEP = 4
++# /tmp is volatile AND shared across users on this VM → per-run persistent dir under $HOME.
++RUN_NAME = os.environ.get("RUN_NAME", "default")
++RUN_ROOT = os.environ.get("RUN_ROOT", os.path.expanduser(f"~/grpo_runs/{RUN_NAME}"))
++INTERMEDIATE_CKPT_DIR = os.path.join(RUN_ROOT, "intermediate_ckpt/")
++CKPT_DIR = os.path.join(RUN_ROOT, "ckpts/")
++TENSORBOARD_DIR = os.path.join(RUN_ROOT, "tensorboard/grpo")
++# Dense ckpts so the best-val (~peak) survives — baseline kept only the last 4 (lost ~step-450).
++SAVE_INTERVAL_STEPS = int(os.environ.get("SAVE_INTERVAL_STEPS", 100))
++MAX_TO_KEEP = int(os.environ.get("MAX_TO_KEEP", 40))
+ 
+ # ====== Inference presets ======
+ GENERATION_CONFIGS = {
+@@ -82,6 +91,6 @@ GENERATION_CONFIGS = {
+ # ====== W&B ======
+ # Set WANDB_RUN_ID in env to resume an existing run (e.g. "bnh9ttlt").
+ # Project + entity must match the existing run, otherwise wandb won't find it.
+-WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "tunix")
+-WANDB_ENTITY = os.environ.get("WANDB_ENTITY", "milindsarkaryt-iiser-mohali")
++WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "a8-grpo")
++WANDB_ENTITY = os.environ.get("WANDB_ENTITY", "sichengma0514-university-of-cambridge")
+ WANDB_RUN_ID = os.environ.get("WANDB_RUN_ID", None)
+diff --git a/scripts/data.py b/scripts/data.py
+index 6667bfc..a1058bc 100644
+--- a/scripts/data.py
++++ b/scripts/data.py
+@@ -75,6 +75,15 @@ def get_dataset(data_dir: str, split: str = "train", source: str = "tfds") -> gr
+             reader = csv.DictReader(f)
+             for row in reader:
+                 data.append({"question": row["question"], "answer": row["answer"]})
++    elif source == "hf":
++        # BASELINE PATCH: TFDS 4.9.9's gsm8k builder crashes under protobuf 7.x
++        # ('FieldDescriptor' object has no attribute 'label') once jax/tunix have
++        # imported the proto backend. Load the identical GSM8K split from HF
++        # `datasets` instead — same questions/answers, parsed the same way below.
++        import datasets as hfds
++        hf_split = "test" if split == "test" else "train"
++        hf = hfds.load_dataset("openai/gsm8k", "main", split=hf_split)
++        data = [{"question": ex["question"], "answer": ex["answer"]} for ex in hf]
+     else:
+         raise ValueError(f"Unknown source: {source}")
+ 
+diff --git a/scripts/evaluate.py b/scripts/evaluate.py
+index 1137eeb..43562cf 100644
+--- a/scripts/evaluate.py
++++ b/scripts/evaluate.py
+@@ -6,14 +6,35 @@ Reports three numbers:
+   * format_accuracy    — fraction of completions whose template parses
+ 
+ Run as:
+-    python evaluate.py
++    python evaluate.py                                       # BASE model (no restore)
++    python evaluate.py --step 3364 --ckpt-dir <dir>          # a finetuned checkpoint
++    python evaluate.py --step 0    --ckpt-dir <dir>          # latest checkpoint
++
++BASELINE PATCHES (documented in the report):
++  1. Added Orbax LoRA restore (--step / --ckpt-dir), using the same
++     CheckpointManager.maybe_restore(..., restore_only_lora_params=True) as
++     chat.py. As-shipped this script built a fresh B=0 LoRA (== base) and never
++     restored a checkpoint, so it could ONLY measure the base model and could
++     not produce the I.1(ii) finetuned number. Default --step -1 keeps the
++     original behaviour (BASE, no restore).
++  2. Added --source hf (default) which loads GSM8K from HF `datasets`, because
++     TFDS 4.9.9's gsm8k builder crashes under protobuf 7.x in the current venv.
++
++Generation settings, NUM_TEST_BATCHES, the data split (seed 42) and the accuracy
++metric are UNCHANGED, so the base model and every checkpoint are scored under
++identical settings (a fair comparison).
+ """
+ import argparse
++import json
++import os
++import random
+ 
+ from tqdm.auto import tqdm
+ from tunix.generate import sampler as sampler_lib
++from tunix.sft.checkpoint_manager import CheckpointManager
+ 
+ from config import (
++    CKPT_DIR,
+     GENERATION_CONFIGS,
+     MAX_PROMPT_LENGTH,
+     NUM_TEST_BATCHES,
+@@ -48,6 +69,7 @@ def generate(question, sampler, eos_tokens, temperature=0.7, top_k=50, top_p=0.9
+ 
+ def evaluate(dataset, sampler, eos_tokens, temperature=0.7, top_k=50, top_p=0.95, num_passes=1):
+     corr = partially_corr = corr_format = total = 0
++    flags = []  # per-example exact-correctness for bootstrap CI
+ 
+     for batch in tqdm(dataset):
+         answers = batch["answer"]
+@@ -78,18 +100,41 @@ def evaluate(dataset, sampler, eos_tokens, temperature=0.7, top_k=50, top_p=0.95
+             corr += int(got_corr)
+             partially_corr += int(got_partial)
+             corr_format += int(got_format)
++            flags.append(int(got_corr))
+             total += 1
+             if total % 10 == 0:
+                 print(f"===> corr={corr} total={total} acc={corr/total*100:.2f}% "
+                       f"partial={partially_corr/total*100:.2f}% fmt={corr_format/total*100:.2f}%")
+ 
+-    return corr, total, corr/total*100, partially_corr/total*100, corr_format/total*100
++    return corr, total, corr/total*100, partially_corr/total*100, corr_format/total*100, flags
++
++
++def bootstrap_ci(flags, n_boot=10000, alpha=0.05, seed=0):
++    """Percentile bootstrap 95% CI for the mean of 0/1 flags. Returns (lo%, hi%)."""
++    if not flags:
++        return (0.0, 0.0)
++    rng = random.Random(seed)
++    n = len(flags)
++    means = sorted(100.0 * sum(flags[rng.randrange(n)] for _ in range(n)) / n
++                   for _ in range(n_boot))
++    return (means[int((alpha / 2) * n_boot)], means[int((1 - alpha / 2) * n_boot)])
+ 
+ 
+ def main():
+     ap = argparse.ArgumentParser()
+     ap.add_argument("--preset", default="greedy", choices=list(GENERATION_CONFIGS))
+-    ap.add_argument("--source", default=DATA_SOURCE, choices=["tfds", "kaggle"])
++    ap.add_argument("--source", default="hf", choices=["tfds", "kaggle", "hf"],
++                    help="GSM8K source. Default 'hf' (TFDS 4.9.9 crashes under protobuf 7.x here).")
++    ap.add_argument("--ckpt-dir", default=os.path.join(CKPT_DIR, "actor"),
++                    help="Directory of per-step Orbax checkpoint subdirs (used with --step).")
++    ap.add_argument("--step", type=int, default=-1,
++                    help="-1 (default) = BASE model, no restore; 0 = latest checkpoint; N = step N.")
++    ap.add_argument("--test-json", default=None,
++                    help="Pre-materialized test split (JSON list of size-1 batches) to use "
++                         "instead of build_train_val_test. Produced jax-free by "
++                         "prepare_test_tfds.py so the TFDS split matches the rest of the team.")
++    ap.add_argument("--dump", default=None,
++                    help="Write per-example results + bootstrap CI to this JSON (default eval_<tag>.json).")
+     args = ap.parse_args()
+ 
+     mesh = build_mesh()
+@@ -98,10 +143,28 @@ def main():
+     lora = get_lora_model(base, mesh)
+     tokenizer, eos_tokens = load_tokenizer(eos_tokens)
+ 
+-    _, _, test_ds = build_train_val_test(
+-        NUM_BATCHES, NUM_TEST_BATCHES, TRAIN_MICRO_BATCH_SIZE, TRAIN_FRACTION,
+-        NUM_EPOCHS, TRAIN_DATA_DIR, TEST_DATA_DIR, source=args.source,
+-    )
++    tag = "BASE"
++    if args.step >= 0:
++        mgr = CheckpointManager(root_directory=args.ckpt_dir)
++        n_restored, _ = mgr.maybe_restore(
++            model=lora, step=(None if args.step == 0 else args.step),
++            restore_only_lora_params=True,
++        )
++        if n_restored == 0:
++            raise RuntimeError(f"No checkpoint found under {args.ckpt_dir} (step={args.step}).")
++        tag = f"FINETUNED step {n_restored}"
++        print(f"Restored LoRA params from step {n_restored}")
++    else:
++        print("No --step given: evaluating the BASE model (B=0 LoRA == base).")
++
++    if args.test_json:
++        test_ds = json.load(open(os.path.expanduser(args.test_json)))
++        print(f"Loaded {len(test_ds)} pre-materialized test batches from {args.test_json}")
++    else:
++        _, _, test_ds = build_train_val_test(
++            NUM_BATCHES, NUM_TEST_BATCHES, TRAIN_MICRO_BATCH_SIZE, TRAIN_FRACTION,
++            NUM_EPOCHS, TRAIN_DATA_DIR, TEST_DATA_DIR, source=args.source,
++        )
+ 
+     sampler = sampler_lib.Sampler(
+         transformer=lora,
+@@ -113,8 +176,21 @@ def main():
+             head_dim=cfg.head_dim,
+         ),
+     )
+-    n, t, acc, pacc, facc = evaluate(test_ds, sampler, eos_tokens, **GENERATION_CONFIGS[args.preset])
+-    print(f"\nFINAL: correct={n}/{t}  acc={acc:.2f}%  partial={pacc:.2f}%  format={facc:.2f}%")
++    data_label = (f"test_json={os.path.basename(args.test_json)}"
++                  if args.test_json else f"source={args.source}")
++    n, t, acc, pacc, facc, flags = evaluate(test_ds, sampler, eos_tokens, **GENERATION_CONFIGS[args.preset])
++    lo, hi = bootstrap_ci(flags)
++    print(f"\nFINAL [{tag}] preset={args.preset} {data_label} n_test={t}: "
++          f"correct={n}/{t}  acc={acc:.2f}%  (95% CI {lo:.2f}-{hi:.2f})  "
++          f"partial={pacc:.2f}%  format={facc:.2f}%")
++
++    dump_path = args.dump or f"eval_{tag.replace(' ', '_')}.json"
++    with open(dump_path, "w") as fh:
++        json.dump({"tag": tag, "preset": args.preset, "data": data_label,
++                   "n": t, "correct": n, "acc": acc, "ci95": [lo, hi],
++                   "partial": pacc, "format": facc, "per_example_correct": flags},
++                  fh, indent=2)
++    print(f"Wrote {dump_path}")
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/scripts/prepare_test_tfds.py b/scripts/prepare_test_tfds.py
+new file mode 100644
+index 0000000..ecf0196
+--- /dev/null
++++ b/scripts/prepare_test_tfds.py
+@@ -0,0 +1,34 @@
++"""Materialize the EXACT shipped TFDS+grain GSM8K test split (the same one the
++rest of the team evaluates on) into JSON, in a process that does NOT import jax
++or config (so TFDS doesn't crash — see the protobuf-7.x baseline patch).
++
++This reproduces build_train_val_test's test_ds line exactly:
++    get_dataset(test_dir, "test", "tfds").batch(train_micro_batch_size)[:num_test_batches]
++with the shipped defaults (TRAIN_MICRO_BATCH_SIZE=1, NUM_TEST_BATCHES=64), so the
++grain shuffle(seed=42) ordering is identical to the shipped evaluate.py path.
++
++Run from ~/tpu-2026/scripts:  python prepare_test_tfds.py
++Then:  python evaluate.py --test-json ~/gsm8k_test_tfds.json [--step N --ckpt-dir ...]
++"""
++import json
++import os
++import sys
++
++sys.path.insert(0, ".")
++from data import get_dataset  # data.py imports no jax / no config
++
++# Shipped config defaults (NOT imported from config.py — that pulls in jax).
++TRAIN_MICRO_BATCH_SIZE = 1
++NUM_TEST_BATCHES = 64
++TEST_DATA_DIR = "./data/test"
++
++test_ds = get_dataset(TEST_DATA_DIR, "test", "tfds").batch(TRAIN_MICRO_BATCH_SIZE)[:NUM_TEST_BATCHES]
++batches = [
++    {"question": list(b["question"]), "answer": list(b["answer"]), "prompts": list(b["prompts"])}
++    for b in test_ds
++]
++out = os.path.expanduser("~/gsm8k_test_tfds.json")
++with open(out, "w") as f:
++    json.dump(batches, f)
++print(f"wrote {len(batches)} batches -> {out}")
++print("first question:", batches[0]["question"][0][:80])
+diff --git a/scripts/rewards.py b/scripts/rewards.py
+index 03c8e28..efb9dbc 100644
+--- a/scripts/rewards.py
++++ b/scripts/rewards.py
+@@ -19,6 +19,7 @@ from comparing siblings drawn from the same prompt.
+ """
+ import re
+ 
++from config import LENGTH_PENALTY, LEN_SOFT_CHARS, LEN_MAX_CHARS
+ from data import reasoning_start, reasoning_end, solution_start, solution_end
+ 
+ 
+@@ -116,4 +117,24 @@ def check_numbers(prompts, completions, answer, **kwargs):
+     return scores
+ 
+ 
++def length_penalty(prompts, completions, **kwargs):
++    """R2 soft-overlong penalty (DAPO Eq. 13), char-length proxy for the token cap.
++
++    0 until LEN_SOFT_CHARS, then ramps linearly to -1 at LEN_MAX_CHARS. Added to
++    REWARD_FNS only when LENGTH_PENALTY=1, so R0/baseline is unaffected.
++    """
++    out = []
++    for r in completions:
++        n = len(r)
++        if n <= LEN_SOFT_CHARS:
++            out.append(0.0)
++        elif n >= LEN_MAX_CHARS:
++            out.append(-1.0)
++        else:
++            out.append(-(n - LEN_SOFT_CHARS) / (LEN_MAX_CHARS - LEN_SOFT_CHARS))
++    return out
++
++
+ REWARD_FNS = [match_format_exactly, match_format_approximately, check_answer, check_numbers]
++if LENGTH_PENALTY:
++    REWARD_FNS.append(length_penalty)
+diff --git a/scripts/train.py b/scripts/train.py
+index 0d59d4e..2c7ecae 100644
+--- a/scripts/train.py
++++ b/scripts/train.py
+@@ -15,16 +15,19 @@ import argparse
+ import os
+ 
+ import nest_asyncio
++import numpy as np
+ import optax
+ import wandb
+ from dotenv import load_dotenv
+ from orbax import checkpoint as ocp
++from tunix.rl import function_registry
+ from tunix.rl import rl_cluster as rl_cluster_lib
+ from tunix.rl.grpo.grpo_learner import GRPOConfig, GRPOLearner
+ from tunix.rl.rollout import base_rollout
+ from tunix.sft import metrics_logger
+ 
+ from config import (
++    ADVANTAGE_ESTIMATOR,
+     B1, B2,
+     BETA,
+     CKPT_DIR,
+@@ -61,6 +64,64 @@ from model import build_mesh, download_weights, load_base_model, get_lora_model,
+ from rewards import REWARD_FNS
+ 
+ 
++# ---- R3: leave-one-out (RLOO) advantage + extra diagnostics ----
++def _rloo_advantage(rewards, num_generations):
++    """Leave-one-out advantage: A_i = r_i - mean_{j!=i} r_j (no std normalisation).
++
++    Contrast with the default "grpo" estimator A_i = (r_i - groupmean)/groupstd.
++    Selected by env ADVANTAGE_ESTIMATOR=rloo (R3); registered for all runs but
++    only used when chosen.
++    """
++    r = np.asarray(rewards, dtype=np.float32).reshape(-1, num_generations)
++    loo = (r.sum(axis=1, keepdims=True) - r) / max(num_generations - 1, 1)
++    return (r - loo).reshape(-1)
++
++
++try:
++    function_registry.register_advantage_estimator("rloo")(_rloo_advantage)
++except Exception:
++    pass  # already registered in this process
++
++
++def make_metric_fns(num_generations):
++    """Per-step diagnostics (I.3c / I.4): within-group reward std, degenerate-group
++    fraction (all-K-equal), advantage spread, and completion length split by
++    advantage sign. Each is fail-safe so it can never kill a training step.
++    """
++    G = num_generations
++
++    def group_stats(prompts, completions, rewards, advantages, **kw):
++        try:
++            r = np.asarray(rewards, dtype=np.float32).reshape(-1, G)
++            sigma = r.std(axis=1)
++            adv = np.asarray(advantages, dtype=np.float32).reshape(-1)
++            return {
++                "diag/reward_std_mean": (float(sigma.mean()), np.mean),
++                "diag/degenerate_frac": (float((sigma < 1e-6).mean()), np.mean),
++                "diag/adv_abs_mean": (float(np.abs(adv).mean()), np.mean),
++                "diag/adv_std": (float(adv.std()), np.mean),
++            }
++        except Exception:
++            return {}
++
++    def length_by_adv(prompts, completions, rewards, advantages, **kw):
++        try:
++            adv = np.asarray(advantages, dtype=np.float32).reshape(-1)
++            lens = np.array([len(c) for c in completions], dtype=np.float32)
++            if len(adv) != len(lens):
++                return {}
++            out = {}
++            if (adv > 0).any():
++                out["diag/len_selected_chars"] = (float(lens[adv > 0].mean()), np.mean)
++            if (adv <= 0).any():
++                out["diag/len_rejected_chars"] = (float(lens[adv <= 0].mean()), np.mean)
++            return out
++        except Exception:
++            return {}
++
++    return [group_stats, length_by_adv]
++
++
+ def login_services():
+     load_dotenv()
+     nest_asyncio.apply()  # tunix uses async; jupyter-style nesting helps in tmux too
+@@ -164,11 +225,18 @@ def main():
+         beta=BETA,
+         epsilon=EPSILON,
+     )
++    # Set advantage estimator post-construction: avoids GRPOConfig's inherited
++    # ["grpo","gae"] validation while still allowing the registered "rloo" (R3).
++    grpo_cfg.advantage_estimator = ADVANTAGE_ESTIMATOR
++    print(f"advantage_estimator={ADVANTAGE_ESTIMATOR}  num_generations={NUM_GENERATIONS}  beta={BETA}")
+ 
+     rl_cluster = rl_cluster_lib.RLCluster(
+         actor=lora, reference=base, tokenizer=tokenizer, cluster_config=cluster_cfg,
+     )
+-    trainer = GRPOLearner(rl_cluster=rl_cluster, reward_fns=REWARD_FNS, algo_config=grpo_cfg)
++    trainer = GRPOLearner(
++        rl_cluster=rl_cluster, reward_fns=REWARD_FNS, algo_config=grpo_cfg,
++        metric_fns=make_metric_fns(NUM_GENERATIONS),
++    )
+ 
+     print(f"Starting GRPO training. CKPT_DIR={CKPT_DIR}  MAX_STEPS={MAX_STEPS}")
+     trainer.train(train_ds, val_ds)
