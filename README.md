@@ -22,7 +22,7 @@ Part I of the Cambridge *Multi-Agent Systems & Agentic AI* practical: GRPO LoRA 
 ## Links
 
 - **W&B runs** — project [`a8-grpo`](https://wandb.ai/sichengma0514-university-of-cambridge/a8-grpo)
-- **Upstream training code** — [`borisbolliet/tpu-2026`](https://github.com/borisbolliet/tpu-2026) @ `77c5a67` (our changes: `tpu-2026_our_changes.patch`)
+- **Upstream training code** — [`borisbolliet/tpu-2026`](https://github.com/borisbolliet/tpu-2026/tree/324abbe4b4e229ea812223856393547db4fbb53e) @ `324abbe` (our changes: `tpu-2026_our_changes.patch`)
 - **GRPO** — DeepSeekMath, [arXiv:2402.03300](https://arxiv.org/abs/2402.03300)
 - **DAPO** — [arXiv:2503.14476](https://arxiv.org/abs/2503.14476)
 - **The N+ Implementation Details of RLHF with PPO** — Huang et al., [OpenReview](https://openreview.net/forum?id=kHO2ZTa8e3)
